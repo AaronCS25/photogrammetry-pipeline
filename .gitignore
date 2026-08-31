@@ -1,0 +1,25 @@
+# Datos y resultados (pesados, no se versionan)
+datasets/raw/*
+!datasets/raw/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Imágenes de contenedor y logs de build
+*.sif
+containers/build.log
+
+# Logs de SLURM
+slurm-logs/
+slurm-*.out
+*.out
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
