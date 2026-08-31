@@ -1,0 +1,108 @@
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-devel-ubuntu22.04
+
+# =============================================================================
+# Imagen de fotogrametría para Khipu (UTEC)
+#   - FFmpeg (extracción de frames)
+#   - COLMAP 3.11.1 con CUDA, sin GUI (SfM sparse + PatchMatch denso)
+#   - OpenMVS 2.3.0 con CUDA (Densify / ReconstructMesh / RefineMesh / TextureMesh)
+#   - Python 3 + PyYAML (orquestador del pipeline)
+#
+# Construir SOLO en el nodo maestro (único con internet), toma ~1-2 horas:
+#   apptainer build photogrammetry.sif photogrammetry.def
+#
+# CUDA_ARCHS cubre todas las GPUs de Khipu:
+#   7.5 = Tesla T4 (g001) | 8.0 = A100 (ag001) | 8.6 = RTX A6000 (g002, ds001)
+# =============================================================================
+
+%labels
+    Author  UTEC PFC-II Photogrammetry
+    Purpose ffmpeg + COLMAP + OpenMVS pipeline (CUDA)
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Nº de procesos de compilación. 8 es amable con el nodo maestro compartido;
+    # se puede subir si el nodo está libre.
+    J=8
+    CUDA_ARCHS="75;80;86"
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        git wget ca-certificates \
+        build-essential cmake ninja-build pkg-config \
+        ffmpeg \
+        python3 python3-yaml \
+        libboost-filesystem-dev libboost-graph-dev libboost-iostreams-dev \
+        libboost-program-options-dev libboost-serialization-dev libboost-system-dev \
+        libeigen3-dev libflann-dev libfreeimage-dev libmetis-dev \
+        libgoogle-glog-dev libgflags-dev libsqlite3-dev libglew-dev \
+        libcgal-dev libsuitesparse-dev libatlas-base-dev \
+        libopencv-dev libcurl4-openssl-dev libssl-dev
+
+    mkdir -p /opt/src
+    cd /opt/src
+
+    # ------------------------------------------------------------------ Ceres
+    git clone --branch 2.2.0 --depth 1 https://github.com/ceres-solver/ceres-solver.git
+    cmake -S ceres-solver -B ceres-solver/build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+    ninja -C ceres-solver/build -j${J} install
+    rm -rf ceres-solver
+
+    # ----------------------------------------------------------------- COLMAP
+    git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git
+    cmake -S colmap -B colmap/build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCUDA_ENABLED=ON \
+        -DGUI_ENABLED=OFF \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}"
+    ninja -C colmap/build -j${J} install
+    rm -rf colmap
+
+    # ---------------------------------------------------------------- OpenMVS
+    git clone --depth 1 https://github.com/cdcseacave/VCG.git /opt/vcglib
+    git clone --branch v2.3.0 --depth 1 --recursive https://github.com/cdcseacave/openMVS.git
+    cmake -S openMVS -B openMVS/build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DOpenMVS_USE_CUDA=ON \
+        -DVCG_ROOT=/opt/vcglib \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}"
+    ninja -C openMVS/build -j${J} install
+    rm -rf openMVS /opt/vcglib
+
+    # ---------------------------------------------------------------- Limpieza
+    cd /
+    rm -rf /opt/src
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export LC_ALL=C
+    # OpenMVS instala sus binarios en /usr/local/bin/OpenMVS
+    export PATH=/usr/local/bin/OpenMVS:$PATH
+
+%test
+    set -e
+    command -v ffmpeg
+    command -v colmap
+    command -v python3
+    python3 -c "import yaml"
+    test -x /usr/local/bin/OpenMVS/DensifyPointCloud
+    test -x /usr/local/bin/OpenMVS/ReconstructMesh
+    test -x /usr/local/bin/OpenMVS/RefineMesh
+    test -x /usr/local/bin/OpenMVS/TextureMesh
+    test -x /usr/local/bin/OpenMVS/InterfaceCOLMAP
+    echo "OK: ffmpeg + COLMAP + OpenMVS + Python listos"
+
+%runscript
+    exec "$@"
+
+%help
+    Imagen con ffmpeg, COLMAP (CUDA) y OpenMVS (CUDA) para el pipeline de
+    fotogrametría. Ejemplos:
+      apptainer exec --nv photogrammetry.sif colmap -h
+      apptainer exec --nv photogrammetry.sif python3 -m pipeline run --config <cfg> --scene <escena>
+    El flag --nv es necesario en nodos GPU.
