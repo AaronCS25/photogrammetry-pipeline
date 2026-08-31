@@ -65,9 +65,12 @@ From: nvidia/cuda:12.6.3-devel-ubuntu22.04
     # ---------------------------------------------------------------- OpenMVS
     git clone --depth 1 https://github.com/cdcseacave/VCG.git /opt/vcglib
     git clone --branch v2.3.0 --depth 1 --recursive https://github.com/cdcseacave/openMVS.git
+    # OpenMVS_USE_PYTHON=OFF: los bindings Python exigen python3-dev y Boost.Python
+    # (REQUIRED en su CMake); solo usamos los binarios CLI, no hacen falta.
     cmake -S openMVS -B openMVS/build -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DOpenMVS_USE_CUDA=ON \
+        -DOpenMVS_USE_PYTHON=OFF \
         -DVCG_ROOT=/opt/vcglib \
         -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}"
     ninja -C openMVS/build -j${J} install
