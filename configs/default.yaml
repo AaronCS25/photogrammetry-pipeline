@@ -1,0 +1,127 @@
+# =============================================================================
+# Configuración BASE del pipeline de fotogrametría.
+#
+# NO editar este archivo para un experimento: crear un YAML en
+# configs/experiments/ que sobreescriba solo lo necesario (merge profundo:
+# los diccionarios se combinan, escalares y listas se reemplazan).
+#
+# Referencia completa de parámetros y recetas: docs/configuration.md
+# =============================================================================
+
+experiment:
+  name: default          # Nombre del experimento => outputs/<escena>/<name>/
+  notes: ""              # Notas libres (quedan en config_resolved.yaml)
+
+# Escena a procesar (carpeta bajo datasets/raw/). Normalmente se pasa por CLI
+# con --scene, pero puede fijarse aquí.
+scene: null
+
+paths:
+  raw_root: datasets/raw   # Relativo a la raíz del repo (o ruta absoluta)
+  output_root: outputs
+
+# -----------------------------------------------------------------------------
+# Etapa 1: extracción de frames con FFmpeg
+# -----------------------------------------------------------------------------
+frames:
+  fps: 2                 # Frames por segundo a extraer del video
+  # resize: null => resolución original.
+  #   {long_edge: 1920}            => lado mayor a 1920 px, mantiene aspecto (recomendado)
+  #   {width: 1080, height: 720}   => encaja dentro de 1080x720 manteniendo aspecto
+  resize: null
+  format: jpg            # jpg | png
+  jpg_quality: 2         # -qscale:v de ffmpeg (1 = mejor calidad ... 31 = peor)
+  start: null            # Recortar el video: "00:00:05" para saltar los primeros 5 s
+  end: null              # Fin del segmento (timestamp absoluto del video)
+  extra_args: []         # Args extra de ffmpeg (lista de strings), se añaden tal cual
+
+# Overrides POR FUENTE (subcarpeta de la escena). Cualquier clave de `frames`
+# puede sobreescribirse por fuente. Ejemplo:
+# sources:
+#   drone: {fps: 1.5}
+#   phone: {fps: 3, resize: {long_edge: 1600}}
+sources: {}
+
+# -----------------------------------------------------------------------------
+# Etapa 2: telemetría (opcional) — parsea .srt de DJI junto a cada video
+# -----------------------------------------------------------------------------
+telemetry:
+  enabled: true
+
+# -----------------------------------------------------------------------------
+# Etapa 3-4: COLMAP (Structure-from-Motion sparse + undistort)
+# -----------------------------------------------------------------------------
+colmap:
+  camera_model: OPENCV           # SIMPLE_RADIAL | RADIAL | OPENCV | OPENCV_FISHEYE ...
+  single_camera_per_source: true # Una cámara por subcarpeta (drone/, phone/, ...)
+
+  feature_extractor:
+    use_gpu: true
+    max_image_size: 2400         # Reescala internamente para extraer features
+    max_num_features: 8192
+    extra_args: {}               # ej: {SiftExtraction.estimate_affine_shape: 1}
+
+  matcher:
+    # Métodos a ejecutar EN ORDEN (los matches se acumulan en la BD):
+    #   sequential  -> ideal para video (frames consecutivos)
+    #   vocab_tree  -> re-localización global; necesario para unir drone + phone
+    #   exhaustive  -> todos contra todos (caro; solo pocas imágenes)
+    #   spatial     -> usa prior de posición (requiere GPS en EXIF)
+    methods: [sequential]
+    use_gpu: true
+    sequential_overlap: 10       # nº de frames vecinos a matchear
+    loop_detection: false        # requiere vocab_tree_path
+    vocab_tree_path: null        # ej: resources/vocab_tree_flickr100K_words256K.bin
+    extra_args: {}
+
+  mapper:
+    extra_args: {}               # ej: {Mapper.ba_global_function_tolerance: 1e-6}
+
+  undistort:
+    max_image_size: -1           # -1 = sin límite
+
+# -----------------------------------------------------------------------------
+# Etapa 5: reconstrucción densa
+# -----------------------------------------------------------------------------
+dense:
+  backend: openmvs               # openmvs (recomendado) | colmap (PatchMatch, para comparar)
+  colmap:                        # Solo se usa si backend == colmap
+    patch_match:
+      geom_consistency: true
+      max_image_size: -1
+      window_radius: 5
+      extra_args: {}
+    fusion:
+      extra_args: {}
+    mesher: none                 # none | poisson | delaunay (solo backend colmap)
+    mesher_extra_args: {}
+
+# -----------------------------------------------------------------------------
+# Etapas 5-7: OpenMVS (densify -> mesh -> refine -> texture)
+# -----------------------------------------------------------------------------
+openmvs:
+  densify:
+    resolution_level: 1          # 0 = resolución completa, 1 = mitad, 2 = cuarto...
+    number_views: 0              # 0 = usar todas las vistas
+    extra_args: {}               # ej: {number-views-fuse: 3}
+  mesh:
+    enabled: true
+    decimate: 1.0                # 1.0 = sin decimación; 0.5 = mitad de caras
+    extra_args: {}               # ej: {smooth: 2}
+  refine:
+    enabled: true
+    scales: 2
+    extra_args: {}               # ej: {max-face-area: 32}
+  texture:
+    enabled: true
+    export_type: obj             # obj | ply | glb
+    extra_args: {}               # ej: {decimate: 0.5}
+
+# -----------------------------------------------------------------------------
+# Métricas y runtime
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+
+runtime:
+  gpu: true                      # false => todo en CPU (lento; backend colmap denso NO funciona sin GPU)

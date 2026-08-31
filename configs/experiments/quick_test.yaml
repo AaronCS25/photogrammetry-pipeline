@@ -1,0 +1,31 @@
+# Smoke test rápido: pocos frames a baja resolución para verificar que todo el
+# pipeline corre de punta a punta antes de lanzar un experimento serio.
+# Puede correr incluso en la partición debug-gpu (límite 30 min) con escenas cortas:
+#   sbatch -p debug-gpu --time=00:30:00 --gres=shard:4 slurm/pipeline.sbatch \
+#          configs/experiments/quick_test.yaml <escena>
+
+experiment:
+  name: quick_test
+  notes: "Smoke test: 0.5 fps, 960 px, malla sin refinar ni texturizar."
+
+frames:
+  fps: 0.5
+  resize: {long_edge: 960}
+  format: jpg
+  jpg_quality: 3
+
+colmap:
+  feature_extractor:
+    max_image_size: 1600
+    max_num_features: 4096
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 8
+
+openmvs:
+  densify:
+    resolution_level: 2
+  refine:
+    enabled: false
+  texture:
+    enabled: false

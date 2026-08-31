@@ -1,0 +1,18 @@
+# Baseline con el backend denso de COLMAP (PatchMatch stereo + fusión) para
+# comparar contra OpenMVS en las métricas de la tesis. Genera
+# colmap/dense/fused.ply y, opcionalmente, mallas Poisson/Delaunay de COLMAP.
+
+experiment:
+  name: colmap_dense_baseline
+  notes: "Denso con COLMAP PatchMatch para comparación contra OpenMVS."
+
+frames:
+  fps: 2
+  resize: {long_edge: 1920}
+
+dense:
+  backend: colmap
+  colmap:
+    patch_match:
+      geom_consistency: true
+    mesher: poisson              # none | poisson | delaunay

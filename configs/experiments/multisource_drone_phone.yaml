@@ -1,0 +1,32 @@
+# Escena con dos fuentes: datasets/raw/<escena>/drone/ y datasets/raw/<escena>/phone/
+#
+# Clave: el matching secuencial solo conecta frames consecutivos DE CADA video,
+# por lo que se añade vocab_tree para conectar las vistas del dron con las del
+# teléfono. Descargar el vocabulario en el nodo maestro (tiene internet):
+#   mkdir -p resources
+#   wget -O resources/vocab_tree_flickr100K_words256K.bin \
+#        https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin
+
+experiment:
+  name: multisource_v1
+  notes: "Dron (vista superior) + teléfono (ángulos bajos), unidos con vocab_tree."
+
+frames:
+  fps: 2
+  resize: {long_edge: 1920}
+
+sources:
+  drone:
+    fps: 2
+  phone:
+    fps: 3                       # el teléfono se mueve más rápido/cerca: más frames
+
+colmap:
+  matcher:
+    methods: [sequential, vocab_tree]
+    sequential_overlap: 15
+    vocab_tree_path: resources/vocab_tree_flickr100K_words256K.bin
+
+openmvs:
+  densify:
+    resolution_level: 1

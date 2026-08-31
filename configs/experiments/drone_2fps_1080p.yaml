@@ -1,0 +1,22 @@
+# Experimento típico: video de dron, 2 fps, reescalado a 1080p (lado mayor 1920).
+# Uso:
+#   ./slurm/submit.sh configs/experiments/drone_2fps_1080p.yaml <escena>
+
+experiment:
+  name: drone_2fps_1080p
+  notes: "Baseline: 2 fps, lado mayor 1920 px, OpenMVS por defecto."
+
+frames:
+  fps: 2
+  resize: {long_edge: 1920}
+  format: jpg
+  jpg_quality: 2
+
+colmap:
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 15
+
+openmvs:
+  densify:
+    resolution_level: 1
