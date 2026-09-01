@@ -46,10 +46,12 @@ photogrammetry-pipeline/
 git clone <URL-de-este-repo>
 cd photogrammetry-pipeline
 
-# 2. Construir el contenedor UNA sola vez (~1-2 h, en el nodo maestro)
+# 2. Construir el contenedor UNA sola vez (~1.5-2 h, nodo maestro, dentro de tmux)
+tmux new -s build
 cd containers
-nohup apptainer build photogrammetry.sif photogrammetry.def > build.log 2>&1 &
-cd ..
+apptainer build base.sif base.def 2>&1 | tee build-base.log                 # deps + COLMAP
+apptainer build photogrammetry.sif photogrammetry.def 2>&1 | tee build.log  # + OpenMVS
+cd ..    # (Ctrl+B, D para salir de tmux dejándolo correr)
 
 # 3. Subir tus videos (desde tu laptop)
 #    rsync -avP ./mi_escena/ khipu:~/photogrammetry-pipeline/datasets/raw/mi_escena/

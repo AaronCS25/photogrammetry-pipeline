@@ -24,13 +24,21 @@ git clone <URL-del-repo> photogrammetry-pipeline
 cd photogrammetry-pipeline
 ```
 
-## 2. Construir el contenedor (una vez, ~1-2 h)
+## 2. Construir el contenedor (una vez, ~1.5-2 h en dos etapas)
+
+Importante: usar **tmux**, no `nohup` — el `%post` de Apptainer muere con
+SIGHUP al cerrarse la sesión SSH aunque se use nohup.
 
 ```bash
+tmux new -s build        # crea sesión persistente en el servidor
 cd containers
-nohup apptainer build photogrammetry.sif photogrammetry.def > build.log 2>&1 &
-tail -f build.log        # Ctrl+C para salir; el build continúa
+apptainer build base.sif base.def 2>&1 | tee build-base.log                 # deps + COLMAP
+apptainer build photogrammetry.sif photogrammetry.def 2>&1 | tee build.log  # + OpenMVS
 ```
+
+Despegarse de tmux: `Ctrl+B`, luego `D` (el build sigue aunque cierres SSH).
+Volver: `tmux attach -t build`. Si falla la etapa 2 (OpenMVS), arreglar y
+repetir solo esa etapa (~15-30 min); `base.sif` no se reconstruye.
 
 Al terminar:
 

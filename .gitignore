@@ -6,7 +6,7 @@ outputs/*
 
 # Imágenes de contenedor y logs de build
 *.sif
-containers/build.log
+containers/build*.log
 
 # Logs de SLURM
 slurm-logs/

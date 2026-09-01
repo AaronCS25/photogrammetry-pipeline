@@ -1,0 +1,79 @@
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-devel-ubuntu22.04
+
+# =============================================================================
+# ETAPA 1/2: imagen base — dependencias + Ceres + COLMAP (lo pesado y estable).
+#
+#   apptainer build base.sif base.def          (~1-1.5 h, nodo maestro, en tmux)
+#
+# Sobre esta imagen se construye photogrammetry.def (OpenMVS, ~15 min), de modo
+# que iterar sobre OpenMVS no recompila todo. base.sif ya es utilizable por sí
+# sola para las etapas frames/sfm/undistort y el backend denso de COLMAP.
+#
+# CUDA_ARCHS cubre todas las GPUs de Khipu:
+#   7.5 = Tesla T4 (g001) | 8.0 = A100 (ag001) | 8.6 = RTX A6000 (g002, ds001)
+# =============================================================================
+
+%labels
+    Author  UTEC PFC-II Photogrammetry
+    Purpose Etapa base: ffmpeg + Ceres + COLMAP (CUDA)
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Nº de procesos de compilación. 8 es amable con el nodo maestro compartido.
+    J=8
+    CUDA_ARCHS="75;80;86"
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        git wget ca-certificates \
+        build-essential cmake ninja-build pkg-config \
+        ffmpeg \
+        python3 python3-yaml \
+        libboost-filesystem-dev libboost-graph-dev libboost-iostreams-dev \
+        libboost-program-options-dev libboost-serialization-dev libboost-system-dev \
+        libeigen3-dev libflann-dev libfreeimage-dev libmetis-dev \
+        libgoogle-glog-dev libgflags-dev libsqlite3-dev libglew-dev \
+        libcgal-dev libsuitesparse-dev libatlas-base-dev \
+        libopencv-dev libcurl4-openssl-dev libssl-dev
+
+    mkdir -p /opt/src
+    cd /opt/src
+
+    # ------------------------------------------------------------------ Ceres
+    git clone --branch 2.2.0 --depth 1 https://github.com/ceres-solver/ceres-solver.git
+    cmake -S ceres-solver -B ceres-solver/build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+    ninja -C ceres-solver/build -j${J} install
+    rm -rf ceres-solver
+
+    # ----------------------------------------------------------------- COLMAP
+    git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git
+    cmake -S colmap -B colmap/build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCUDA_ENABLED=ON \
+        -DGUI_ENABLED=OFF \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHS}"
+    ninja -C colmap/build -j${J} install
+    rm -rf colmap
+
+    # ---------------------------------------------------------------- Limpieza
+    cd /
+    rm -rf /opt/src
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export LC_ALL=C
+
+%test
+    set -e
+    command -v ffmpeg
+    command -v ffprobe
+    command -v colmap
+    command -v python3
+    python3 -c "import yaml"
+    echo "OK base: ffmpeg + COLMAP + Python listos"
