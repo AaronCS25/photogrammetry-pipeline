@@ -53,8 +53,8 @@ def parse_srt(srt_path: Path) -> list[dict]:
 
 def run_telemetry(ctx: Context) -> None:
     found = 0
-    for source, videos in discover_sources(ctx.raw_dir).items():
-        for video in videos:
+    for source, media in discover_sources(ctx.raw_dir).items():
+        for video in media["videos"]:
             candidates = [video.with_suffix(ext) for ext in (".srt", ".SRT")]
             srt = next((c for c in candidates if c.is_file()), None)
             if srt is None:

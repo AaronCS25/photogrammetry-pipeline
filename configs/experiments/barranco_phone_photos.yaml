@@ -1,0 +1,37 @@
+# 918 fotos del POCO X6 (16 MP, EXIF con focal y GPS) de una manzana del malecón.
+#
+# Preparación de la escena (las verticales tienen los píxeles rotados y no
+# pueden compartir cámara con las horizontales):
+#   mkdir -p datasets/raw/barranco_phone/horizontal datasets/raw/barranco_phone/vertical
+#   # mover las 918 fotos y separar las ~29 verticales, p. ej.:
+#   #   una foto es vertical si su alto > ancho (3472x4624)
+#
+# Las fotos se COPIAN sin reescalar para preservar el EXIF: COLMAP usa la focal
+# como prior de calibración y el GPS habilita el matcher 'spatial', que conecta
+# fotos cercanas en el espacio (ideal con 918 imágenes, y une los bucles del
+# recorrido a pie sin necesidad de vocab tree).
+
+experiment:
+  name: barranco_phone_v1
+  notes: "918 fotos POCO X6 16MP con GPS; sequential+spatial; sin resize (EXIF intacto)."
+
+frames:
+  resize: null            # crucial: preservar EXIF (focal + GPS)
+
+telemetry:
+  enabled: false          # no hay .srt en fotos
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 2400  # COLMAP reescala internamente para SIFT; el archivo queda intacto
+    max_num_features: 8192
+  matcher:
+    methods: [sequential, spatial]   # secuencial (orden temporal) + espacial (GPS)
+    sequential_overlap: 15
+  undistort:
+    max_image_size: 2400  # limita la resolución de entrada al denso (fotos de 4624 px)
+
+openmvs:
+  densify:
+    resolution_level: 1

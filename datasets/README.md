@@ -40,10 +40,22 @@ datasets/raw/fachada_norte/
 
 ## Formatos soportados
 
-- **Video** (por ahora la única entrada): `.mp4 .mov .m4v .avi .mkv .mts .m2ts .webm`
-  (mayúsculas o minúsculas).
+- **Video**: `.mp4 .mov .m4v .avi .mkv .mts .m2ts .webm` (mayúsculas o minúsculas).
+- **Fotos sueltas**: `.jpg .jpeg .png .webp .tif .tiff .bmp`. Se copian a los
+  frames preservando el EXIF (COLMAP usa la focal como prior y el GPS habilita
+  el matcher `spatial`). **Importante**: todas las fotos de una misma fuente
+  deben tener idénticas dimensiones de píxel — las fotos verticales (píxeles
+  rotados) van en su propia subcarpeta:
+
+  ```
+  datasets/raw/mi_escena/
+  ├── horizontal/   *.jpg 4624x3472
+  └── vertical/     *.jpg 3472x4624
+  ```
+
 - **Telemetría**: `.srt` de DJI con el mismo nombre base que su video.
-- **Fotos sueltas**: aún no soportadas (extensión prevista).
+- Una fuente puede mezclar videos y fotos; también pueden convivir fuentes de
+  dron (video) y de teléfono (fotos) en una misma escena.
 
 ## Subir datos a Khipu
 

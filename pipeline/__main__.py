@@ -112,16 +112,23 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     sources = frames_mod.discover_sources(ctx.raw_dir)
     if not sources:
-        print("ERROR: no se encontraron videos en la escena.", file=sys.stderr)
+        print("ERROR: no se encontraron videos ni fotos en la escena.", file=sys.stderr)
         return 1
     print("\nFuentes detectadas:")
-    for source, videos in sources.items():
+    for source, media in sources.items():
         settings = frames_mod.source_settings(cfg, source)
-        print(f"  {source}: {len(videos)} video(s) | fps={settings.get('fps')} "
-              f"resize={settings.get('resize')} format={settings.get('format')}")
+        videos, photos = media["videos"], media["photos"]
+        print(f"  {source}: {len(videos)} video(s), {len(photos)} foto(s) | "
+              f"fps={settings.get('fps')} resize={settings.get('resize')} "
+              f"format={settings.get('format')}")
         for video in videos:
             srt = " (+.srt)" if any(video.with_suffix(e).is_file() for e in (".srt", ".SRT")) else ""
             print(f"    - {video.name}{srt}")
+        if photos:
+            print(f"    - fotos: {photos[0].name} ... {photos[-1].name}")
+            if settings.get("resize"):
+                print("      AVISO: resize en fotos elimina EXIF (focal/GPS); "
+                      "considerar resize: null para esta fuente vía sources:")
 
     if len(sources) > 1:
         methods = cfg["colmap"]["matcher"].get("methods", [])

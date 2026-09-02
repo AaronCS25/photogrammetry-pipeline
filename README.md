@@ -98,8 +98,10 @@ Si la escena tiene una sola fuente, los videos pueden ir directamente en
 modela en COLMAP como una cámara distinta (`single_camera_per_folder`), que es
 exactamente lo que se necesita al combinar dron + teléfono.
 
-> Por ahora el pipeline soporta **solo video** como entrada. El soporte de fotos
-> sueltas (modo ráfaga del teléfono) está previsto como extensión.
+> Entradas soportadas: **video** (extracción de frames con ffmpeg) y **fotos
+> sueltas** (se copian preservando EXIF — focal y GPS que COLMAP aprovecha).
+> Fotos verticales y horizontales van en subcarpetas separadas (dimensiones de
+> píxel distintas no pueden compartir cámara). Ver `datasets/README.md`.
 
 ## Etapas del pipeline
 

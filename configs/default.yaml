@@ -34,6 +34,16 @@ frames:
   start: null            # Recortar el video: "00:00:05" para saltar los primeros 5 s
   end: null              # Fin del segmento (timestamp absoluto del video)
   extra_args: []         # Args extra de ffmpeg (lista de strings), se añaden tal cual
+  # Fotos sueltas (jpg/png/...) encontradas en la escena:
+  #   mode: copy    -> copia preservando EXIF (focal/GPS para COLMAP; recomendado)
+  #   mode: symlink -> enlaza sin duplicar disco (también preserva EXIF)
+  # Si la fuente tiene `resize`, las fotos se reescalan con ffmpeg y PIERDEN el
+  # EXIF; para fotos conviene resize: null y limitar tamaño en COLMAP
+  # (feature_extractor.max_image_size y undistort.max_image_size).
+  # OJO: todas las fotos de una misma fuente deben tener idénticas dimensiones
+  # de píxel (fotos verticales van en su propia subcarpeta).
+  photos:
+    mode: copy
 
 # Overrides POR FUENTE (subcarpeta de la escena). Cualquier clave de `frames`
 # puede sobreescribirse por fuente. Ejemplo:
