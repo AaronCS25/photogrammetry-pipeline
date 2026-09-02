@@ -19,6 +19,10 @@ SCENE_DENSE = "scene_dense.mvs"
 SCENE_MESH = "scene_mesh.mvs"
 SCENE_MESH_REFINED = "scene_mesh_refined.mvs"
 SCENE_TEXTURE = "scene_texture.mvs"
+# Las herramientas de malla escriben el resultado como PLY derivado del -o;
+# la escena de entrada sigue siendo scene_dense.mvs + --mesh-file <ply>.
+MESH_PLY = "scene_mesh.ply"
+MESH_REFINED_PLY = "scene_mesh_refined.ply"
 
 
 def _cuda_args(ctx: Context) -> list[str]:
@@ -96,19 +100,27 @@ def run_mesh(ctx: Context) -> None:
     ]
     cmd += extra_args_to_cli(mcfg.get("extra_args"))
     _run(ctx, cmd, "mesh.log")
+    _require(ctx, MESH_PLY, "mesh")
 
     rcfg = ctx.cfg["openmvs"]["refine"]
     if rcfg.get("enabled", True):
         cmd = [
             "RefineMesh",
             "-w", ctx.mvs_dir,
-            SCENE_MESH,
+            SCENE_DENSE,
+            "--mesh-file", MESH_PLY,
             "-o", SCENE_MESH_REFINED,
             "--scales", str(rcfg.get("scales", 2)),
         ]
         cmd += _cuda_args(ctx)
         cmd += extra_args_to_cli(rcfg.get("extra_args"))
-        _run(ctx, cmd, "mesh.log")
+        try:
+            _run(ctx, cmd, "mesh.log")
+        except CommandError as exc:
+            # El refinado es una mejora, no un requisito: si falla se continúa
+            # con la malla sin refinar para no bloquear el texturizado.
+            print(f"[mesh] ADVERTENCIA: RefineMesh falló; se continúa con la malla "
+                  f"sin refinar. Detalle: {exc}")
 
 
 def run_texture(ctx: Context) -> None:
@@ -117,15 +129,19 @@ def run_texture(ctx: Context) -> None:
         print("[texture] openmvs.texture.enabled = false: etapa omitida")
         return
     # Usar la malla refinada si existe; si no, la malla base
-    if (ctx.mvs_dir / SCENE_MESH_REFINED).is_file():
-        mesh_scene = SCENE_MESH_REFINED
-    else:
-        mesh_scene = _require(ctx, SCENE_MESH, "mesh").name
+    mesh_file = None
+    for candidate in (MESH_REFINED_PLY, MESH_PLY):
+        if (ctx.mvs_dir / candidate).is_file():
+            mesh_file = candidate
+            break
+    if mesh_file is None:
+        raise CommandError(f"No hay malla en {ctx.mvs_dir}; ¿se ejecutó la etapa 'mesh'?")
 
     cmd = [
         "TextureMesh",
         "-w", ctx.mvs_dir,
-        mesh_scene,
+        SCENE_DENSE,
+        "--mesh-file", mesh_file,
         "-o", SCENE_TEXTURE,
         "--export-type", str(tcfg.get("export_type", "obj")),
     ]
