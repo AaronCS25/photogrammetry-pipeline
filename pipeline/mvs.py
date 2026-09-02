@@ -7,6 +7,7 @@ anterior. Todos los artefactos quedan en outputs/<escena>/<exp>/mvs/.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .config import Context
@@ -36,11 +37,24 @@ def _require(ctx: Context, filename: str, produced_by: str) -> Path:
     return path
 
 
+def _link_undistorted_images(ctx: Context, workspace: Path) -> None:
+    """scene.mvs referencia las imágenes como rutas relativas ('images/...')
+    resueltas contra la carpeta de trabajo de OpenMVS; se enlazan las imágenes
+    undistorted dentro de mvs/ para que esas rutas existan."""
+    link = ctx.mvs_dir / "images"
+    if link.is_symlink():
+        link.unlink()
+    if not link.exists():
+        target = os.path.relpath(workspace / "images", ctx.mvs_dir)
+        link.symlink_to(target, target_is_directory=True)
+
+
 def run_densify(ctx: Context) -> None:
     ctx.mvs_dir.mkdir(parents=True, exist_ok=True)
     workspace = undistorted_dir(ctx)
     if not workspace.is_dir():
         raise CommandError(f"No existe {workspace}: ejecutar antes la etapa 'undistort'.")
+    _link_undistorted_images(ctx, workspace)
 
     # 1) Conversión del workspace COLMAP a formato OpenMVS (.mvs)
     _run(ctx, [
