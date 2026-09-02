@@ -50,7 +50,10 @@ fi
 echo "== Job $SLURM_JOB_ID en $(hostname) | config=$CONFIG ${SCENE_ARGS[*]:-} $*"
 echo "== Inicio: $(date -Is)"
 
-srun apptainer exec --nv "$CONTAINER" \
+# Sin `srun`: los gres de tipo `shard` se asignan al job pero los job steps no
+# pueden heredarlos (srun falla con "Invalid generic resource specification").
+# Con --ntasks=1 el comando corre igual en el nodo asignado.
+apptainer exec --nv "$CONTAINER" \
     python3 -m pipeline run --config "$CONFIG" "${SCENE_ARGS[@]}" "$@"
 
 echo "== Fin: $(date -Is)"
