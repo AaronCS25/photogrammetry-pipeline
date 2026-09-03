@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -61,6 +62,7 @@ def _gpu_flag(ctx: Context, section: dict) -> str:
 def run_sfm(ctx: Context) -> None:
     cfg = ctx.cfg["colmap"]
     log = ctx.logs_dir / "sfm.log"
+    breakdown: dict[str, float] = {}  # tiempo por comando COLMAP, para métricas
 
     # Run limpio de la etapa: BD y sparse previos fuera
     if database_path(ctx).exists():
@@ -88,7 +90,7 @@ def run_sfm(ctx: Context) -> None:
     if cfg.get("single_camera_per_source", True):
         cmd += ["--ImageReader.single_camera_per_folder", "1"]
     cmd += extra_args_to_cli(fe.get("extra_args"))
-    run_cmd(cmd, log)
+    breakdown["feature_extractor"] = round(run_cmd(cmd, log), 2)
 
     # ---------------------------------------------------------- matching
     mt = cfg["matcher"]
@@ -131,7 +133,7 @@ def run_sfm(ctx: Context) -> None:
         else:
             raise CommandError(f"Método de matching no soportado: {method}")
         cmd += extra_args_to_cli(mt.get("extra_args"))
-        run_cmd(cmd, log)
+        breakdown[f"matcher_{method}"] = round(run_cmd(cmd, log), 2)
 
     # ---------------------------------------------------------- mapper
     cmd = [
@@ -141,7 +143,11 @@ def run_sfm(ctx: Context) -> None:
         "--output_path", sparse_dir(ctx),
     ]
     cmd += extra_args_to_cli(cfg.get("mapper", {}).get("extra_args"))
-    run_cmd(cmd, log)
+    breakdown["mapper"] = round(run_cmd(cmd, log), 2)
+
+    ctx.metrics_dir.mkdir(parents=True, exist_ok=True)
+    with open(ctx.metrics_dir / "sfm_timings.json", "w", encoding="utf-8") as fh:
+        json.dump(breakdown, fh, indent=2)
 
     _select_best_model(ctx)
 

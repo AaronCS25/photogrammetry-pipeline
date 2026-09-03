@@ -88,7 +88,17 @@ def run_metrics(ctx: Context, timings: dict[str, float]) -> None:
         "notes": (ctx.cfg.get("experiment") or {}).get("notes", ""),
         "dense_backend": ctx.cfg["dense"].get("backend", "openmvs"),
         "timings_seconds": timings,
+        "timings_total_seconds": round(sum(t for t in timings.values() if t), 2),
     }
+
+    # Desglose interno de la etapa sfm (features / matching / mapper), si existe
+    sfm_timings_file = ctx.metrics_dir / "sfm_timings.json"
+    if sfm_timings_file.is_file():
+        try:
+            metrics["sfm_breakdown_seconds"] = json.loads(
+                sfm_timings_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
 
     # Frames por fuente
     frames: dict[str, int] = {}
