@@ -86,7 +86,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 continue  # siempre al final, fuera del sistema de marcadores
             runner.run(stage, functions[stage])
         if "metrics" in stages and ctx.cfg.get("metrics", {}).get("enabled", True):
-            run_metrics(ctx, runner.collected_timings())
+            run_metrics(ctx, runner.collected_timings(), runner.collected_stage_info())
     except (CommandError, ConfigError) as exc:
         print(f"\n[pipeline] ERROR: {exc}", file=sys.stderr)
         print("[pipeline] las etapas completadas quedan marcadas; al relanzar se reanuda desde el fallo.",

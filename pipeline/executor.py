@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import subprocess
 import sys
 import time
@@ -103,11 +105,23 @@ class StageRunner:
                 {
                     "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "elapsed_seconds": self.timings[name],
+                    "hostname": platform.node(),
+                    "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                 }
             ),
             encoding="utf-8",
         )
         print(f"[pipeline] etapa '{name}': completada en {elapsed:,.1f} s")
+
+    def collected_stage_info(self) -> dict[str, dict]:
+        """Contenido completo de los marcadores (tiempos, nodo, job) por etapa."""
+        info: dict[str, dict] = {}
+        for marker in sorted(self.markers_dir.glob("*.done")):
+            try:
+                info[marker.stem] = json.loads(marker.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return info
 
     def collected_timings(self) -> dict[str, float]:
         """Tiempos de este run + los de runs anteriores (leídos de los marcadores)."""

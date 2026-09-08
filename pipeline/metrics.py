@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import platform
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -80,7 +82,29 @@ def _file_stat(path: Path) -> dict | None:
             "size_mb": round(path.stat().st_size / 1e6, 2)}
 
 
-def run_metrics(ctx: Context, timings: dict[str, float]) -> None:
+def _runtime_environment() -> dict:
+    """Hardware y recursos del job actual (nodo, GPU, asignación SLURM)."""
+    env = {
+        "hostname": platform.node(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurm_gres": os.environ.get("SLURM_JOB_GRES"),
+        "slurm_cpus_per_task": os.environ.get("SLURM_CPUS_PER_TASK"),
+        "slurm_mem_per_node": os.environ.get("SLURM_MEM_PER_NODE"),
+    }
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            env["gpu"] = result.stdout.strip().splitlines()[0]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {k: v for k, v in env.items() if v}
+
+
+def run_metrics(ctx: Context, timings: dict[str, float],
+                stage_info: dict[str, dict] | None = None) -> None:
     metrics: dict = {
         "scene": ctx.scene,
         "experiment": ctx.experiment,
@@ -89,7 +113,15 @@ def run_metrics(ctx: Context, timings: dict[str, float]) -> None:
         "dense_backend": ctx.cfg["dense"].get("backend", "openmvs"),
         "timings_seconds": timings,
         "timings_total_seconds": round(sum(t for t in timings.values() if t), 2),
+        "environment": _runtime_environment(),
     }
+
+    # Nodo en el que corrió cada etapa (puede variar si el experimento se reanudó)
+    if stage_info:
+        hosts = {stage: info.get("hostname") for stage, info in stage_info.items()
+                 if info.get("hostname")}
+        if hosts:
+            metrics["stage_hosts"] = hosts
 
     # Desglose interno de la etapa sfm (features / matching / mapper), si existe
     sfm_timings_file = ctx.metrics_dir / "sfm_timings.json"
