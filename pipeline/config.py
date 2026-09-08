@@ -69,6 +69,7 @@ class Context:
         self.raw_dir = _resolve_path(self.cfg["paths"]["raw_root"]) / self.scene
         self.out_dir = _resolve_path(self.cfg["paths"]["output_root"]) / self.scene / self.experiment
         self.frames_dir = self.out_dir / "frames"
+        self.masks_dir = self.out_dir / "masks"
         self.telemetry_dir = self.out_dir / "telemetry"
         self.colmap_dir = self.out_dir / "colmap"
         self.mvs_dir = self.out_dir / "mvs"

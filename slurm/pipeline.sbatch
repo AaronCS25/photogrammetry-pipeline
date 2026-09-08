@@ -50,6 +50,24 @@ fi
 echo "== Job $SLURM_JOB_ID en $(hostname) | config=$CONFIG ${SCENE_ARGS[*]:-} $*"
 echo "== Inicio: $(date -Is)"
 
+# --- Fase previa: enmascaramiento semántico (solo si la config lo habilita) ---
+# La segmentación necesita torch, que vive en un contenedor aparte. Se ejecutan
+# ahí las etapas frames/telemetry/masks (pre-masks respeta --stages/--from-stage/
+# --force) y el run principal las encuentra completadas vía los marcadores.
+MASKS_CONTAINER="${MASKS_CONTAINER:-containers/segmentation.sif}"
+MASKING_ENABLED=$(PIPELINE_CFG="$CONFIG" apptainer exec "$CONTAINER" python3 -c \
+    "import os; from pipeline.config import load_config; print((load_config(os.environ['PIPELINE_CFG']).get('masking') or {}).get('enabled', False))" \
+    2>/dev/null || echo False)
+if [[ "$MASKING_ENABLED" == "True" ]]; then
+    if [[ ! -f "$MASKS_CONTAINER" ]]; then
+        echo "ERROR: masking.enabled=true pero no existe $MASKS_CONTAINER (ver containers/README.md)" >&2
+        exit 1
+    fi
+    echo "== Fase de enmascaramiento ($MASKS_CONTAINER)"
+    apptainer exec --nv "$MASKS_CONTAINER" \
+        python3 -m pipeline pre-masks --config "$CONFIG" "${SCENE_ARGS[@]}" "$@"
+fi
+
 # Sin `srun`: los gres de tipo `shard` se asignan al job pero los job steps no
 # pueden heredarlos (srun falla con "Invalid generic resource specification").
 # Con --ntasks=1 el comando corre igual en el nodo asignado.

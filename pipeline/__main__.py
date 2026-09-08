@@ -15,13 +15,17 @@ from .config import ConfigError, Context, load_config, make_context
 from .executor import CommandError, StageRunner
 from . import frames as frames_mod
 from . import telemetry as telemetry_mod
+from . import masks as masks_mod
 from . import sfm as sfm_mod
 from . import mvs as mvs_mod
 from .metrics import run_metrics
 from .report import run_report
 
 # Orden canónico de etapas
-STAGE_ORDER = ["frames", "telemetry", "sfm", "undistort", "dense", "mesh", "texture", "metrics"]
+STAGE_ORDER = ["frames", "telemetry", "masks", "sfm", "undistort", "dense", "mesh", "texture", "metrics"]
+
+# Etapas que puede ejecutar el contenedor de segmentación (subcomando pre-masks)
+PRE_MASK_STAGES = ["frames", "telemetry", "masks"]
 
 
 def _stage_functions(ctx: Context) -> dict:
@@ -40,6 +44,7 @@ def _stage_functions(ctx: Context) -> dict:
     return {
         "frames": lambda: frames_mod.run_frames(ctx),
         "telemetry": lambda: telemetry_mod.run_telemetry(ctx),
+        "masks": lambda: masks_mod.run_masks(ctx),
         "sfm": lambda: sfm_mod.run_sfm(ctx),
         "undistort": lambda: sfm_mod.run_undistort(ctx),
         "dense": dense_fn,
@@ -64,19 +69,28 @@ def _selected_stages(args: argparse.Namespace) -> list[str]:
     return stages
 
 
-def cmd_run(args: argparse.Namespace) -> int:
+def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     ctx = make_context(cfg, args.scene, force=args.force)
     ctx.prepare()
     ctx.dump_resolved_config()
 
     stages = _selected_stages(args)
+    if restrict is not None:
+        stages = [s for s in stages if s in restrict]
+
+    if not ctx.cfg.get("telemetry", {}).get("enabled", True) and "telemetry" in stages:
+        stages.remove("telemetry")
+    if not (ctx.cfg.get("masking") or {}).get("enabled") and "masks" in stages:
+        stages.remove("masks")
+
     print(f"[pipeline] escena='{ctx.scene}' experimento='{ctx.experiment}'")
     print(f"[pipeline] etapas a ejecutar: {stages}")
     print(f"[pipeline] salida: {ctx.out_dir}")
 
-    if not ctx.cfg.get("telemetry", {}).get("enabled", True) and "telemetry" in stages:
-        stages.remove("telemetry")
+    if not stages:
+        print("[pipeline] nada que ejecutar")
+        return 0
 
     runner = StageRunner(ctx.markers_dir, force=args.force)
     functions = _stage_functions(ctx)
@@ -151,6 +165,24 @@ def cmd_validate(args: argparse.Namespace) -> int:
                   "wget https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin", file=sys.stderr)
             return 1
 
+    mcfg = cfg.get("masking") or {}
+    if mcfg.get("enabled"):
+        from . import mask_backends
+        backend = mask_backends.get_backend(mcfg.get("backend", "segformer"))
+        if hasattr(backend, "resolve_class_ids"):
+            backend.resolve_class_ids(mcfg.get("classes") or [])
+        print(f"\nEnmascaramiento: backend={mcfg.get('backend')} "
+              f"clases={mcfg.get('classes')} dilate={mcfg.get('dilate_px')}px "
+              f"dense={'sí' if mcfg.get('apply_to_dense') else 'no'}")
+        from .config import REPO_ROOT
+        seg_container = REPO_ROOT / "containers" / "segmentation.sif"
+        if not seg_container.is_file():
+            print(f"  AVISO: no existe {seg_container} — construirlo antes de lanzar "
+                  "(ver containers/README.md), o la fase de máscaras fallará.")
+        if not backend.is_available():
+            print("  (backend no disponible en ESTE entorno: las máscaras se generan "
+                  "en el contenedor de segmentación — comportamiento esperado)")
+
     print("\nBinarios en PATH:")
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):
         status = shutil.which(binary) or "NO ENCONTRADO (ok si se ejecutará dentro del contenedor)"
@@ -178,6 +210,18 @@ def main() -> int:
     p_run.add_argument("--force", action="store_true",
                        help="Re-ejecuta las etapas seleccionadas aunque estén marcadas como completadas")
     p_run.set_defaults(func=cmd_run)
+
+    # Fase previa usada por slurm/pipeline.sbatch: ejecuta (en el contenedor de
+    # segmentación) solo las etapas que ese contenedor puede hacer, respetando
+    # los mismos flags del run principal.
+    p_pre = sub.add_parser("pre-masks",
+                           help="Ejecuta solo frames/telemetry/masks (contenedor de segmentación)")
+    p_pre.add_argument("--config")
+    p_pre.add_argument("--scene")
+    p_pre.add_argument("--stages")
+    p_pre.add_argument("--from-stage")
+    p_pre.add_argument("--force", action="store_true")
+    p_pre.set_defaults(func=lambda args: cmd_run(args, restrict=PRE_MASK_STAGES))
 
     p_val = sub.add_parser("validate", help="Valida configuración y datos sin ejecutar nada")
     p_val.add_argument("--config")

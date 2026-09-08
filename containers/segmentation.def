@@ -1,0 +1,62 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+
+# =============================================================================
+# Contenedor de SEGMENTACIÓN (etapa 'masks' del pipeline).
+# Separado del de fotogrametría a propósito: torch/transformers pesan varios GB
+# y solo se necesitan para generar máscaras.
+#
+# Construcción (nodo maestro):
+#   apptainer build segmentation.sif segmentation.def          (~15-20 min)
+#
+# Descarga de pesos del modelo (UNA vez, nodo maestro — los nodos de cómputo
+# no tienen internet y leerán la caché de $HOME/.cache/huggingface):
+#   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 \
+#       segmentation.sif python3 -c "from transformers import AutoImageProcessor, \
+#       SegformerForSemanticSegmentation as M; \
+#       AutoImageProcessor.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024'); \
+#       M.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024')"
+#
+# En runtime el contenedor fuerza modo offline (HF_HUB_OFFLINE=1) para que los
+# nodos de cómputo no intenten conectarse a Hugging Face.
+# =============================================================================
+
+%labels
+    Author  UTEC PFC-II Photogrammetry
+    Purpose Segmentación semántica para máscaras (SegFormer y backends futuros)
+
+%post
+    set -e
+    # ffmpeg: la fase pre-masks también puede ejecutar la etapa 'frames'
+    # (p. ej. con --force), así que este contenedor debe poder extraer frames.
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends ffmpeg
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # torchvision fijado a la versión que empareja con el torch 2.4.1 de la
+    # imagen base (evita que pip reinstale torch); lo requieren los
+    # image processors de transformers.
+    pip install --no-cache-dir \
+        torchvision==0.19.1 \
+        transformers==4.44.2 \
+        pillow \
+        opencv-python-headless \
+        pyyaml
+
+%environment
+    export LC_ALL=C
+    # Los nodos de cómputo no tienen internet: usar solo la caché local de HF.
+    # Para DESCARGAR pesos en el maestro, sobreescribir con:
+    #   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 ...
+    export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
+    export TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-1}
+
+%test
+    set -e
+    command -v ffmpeg
+    python3 -c "import torch; import transformers; import cv2; import yaml; import PIL"
+    echo "OK segmentacion: torch $(python3 -c 'import torch; print(torch.__version__)')"
+
+%runscript
+    exec "$@"

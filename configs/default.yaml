@@ -59,6 +59,34 @@ telemetry:
   enabled: true
 
 # -----------------------------------------------------------------------------
+# Etapa 2b: enmascaramiento semántico (opcional, OFF por defecto)
+#
+# Genera una máscara PNG por frame marcando los píxeles a IGNORAR (personas,
+# autos, vegetación...). COLMAP no extrae features ahí (--ImageReader.mask_path)
+# y, si apply_to_dense está activo, OpenMVS tampoco densifica esos píxeles.
+#
+# Requiere el contenedor containers/segmentation.sif (ver containers/README.md).
+# La etapa es autónoma: puede ejecutarse sola con
+#   apptainer exec --nv containers/segmentation.sif \
+#       python3 -m pipeline run --config <cfg> --scene <escena> --stages masks
+# -----------------------------------------------------------------------------
+masking:
+  enabled: false
+  backend: segformer          # pieza intercambiable: ver pipeline/mask_backends/
+  # Clases a enmascarar (vocabulario del backend; segformer usa Cityscapes):
+  #   person rider car truck bus train motorcycle bicycle
+  #   vegetation terrain sky pole traffic_light traffic_sign building road ...
+  # Nota: 'vegetation' elimina árboles de la reconstrucción pero DEJA HUECOS
+  # donde tapaban fachada; los cables NO son segmentables (estructura muy fina),
+  # se mitigan con dilate_px y limpieza de malla.
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky]
+  dilate_px: 15               # margen (px) alrededor de cada objeto enmascarado
+  apply_to_dense: false       # pasar máscaras también a DensifyPointCloud (OpenMVS)
+  backends:
+    segformer:
+      model_id: nvidia/segformer-b5-finetuned-cityscapes-1024-1024
+
+# -----------------------------------------------------------------------------
 # Etapa 3-4: COLMAP (Structure-from-Motion sparse + undistort)
 # -----------------------------------------------------------------------------
 colmap:

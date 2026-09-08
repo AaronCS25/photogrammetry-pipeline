@@ -78,6 +78,15 @@ def run_densify(ctx: Context) -> None:
         "--resolution-level", str(dcfg.get("resolution_level", 1)),
         "--number-views", str(dcfg.get("number_views", 0)),
     ]
+    mcfg = ctx.cfg.get("masking") or {}
+    if mcfg.get("enabled") and mcfg.get("apply_to_dense"):
+        # Máscaras generadas sobre los frames originales; la undistorsión
+        # desplaza píxeles algunos px cerca de los bordes — el dilate_px de la
+        # etapa masks absorbe ese margen.
+        from .masks import require_masks
+        require_masks(ctx)
+        cmd += ["--mask-path", ctx.masks_dir, "--ignore-mask-label", "0"]
+        print("[dense] enmascaramiento activo también en la densificación")
     cmd += _cuda_args(ctx)
     cmd += extra_args_to_cli(dcfg.get("extra_args"))
     _run(ctx, cmd, "dense.log")

@@ -49,6 +49,41 @@ sources:
 `[latitude: ...]` y antiguo `GPS(...)`) a CSV en `telemetry/<fuente>/`. No
 interviene aún en la reconstrucción (reservado para geo-registro futuro).
 
+## `masking` — enmascaramiento semántico (opcional, OFF por defecto)
+
+Genera una máscara por frame (0 = ignorar, 255 = usar) con un modelo de
+segmentación, y la aplica en COLMAP (`--ImageReader.mask_path`, no se extraen
+features sobre obstáculos) y opcionalmente en OpenMVS
+(`--mask-path`/`--ignore-mask-label`, no se densifican esos píxeles).
+
+| Clave | Default | Descripción |
+|---|---|---|
+| `enabled` | `false` | Con `false` el pipeline es idéntico al flujo sin máscaras (ni requiere el contenedor de segmentación). |
+| `backend` | `segformer` | Pieza intercambiable: módulo en `pipeline/mask_backends/`. Para añadir otro modelo se crea un módulo con el mismo contrato y se registra — sin tocar el resto del pipeline. |
+| `classes` | dinámicos + `sky` | Qué enmascarar (vocabulario Cityscapes en segformer: `person rider car truck bus train motorcycle bicycle vegetation terrain sky pole traffic_light traffic_sign building road ...`). |
+| `dilate_px` | `15` | Margen alrededor de cada objeto. También absorbe el desplazamiento de la undistorsión cuando `apply_to_dense: true`. |
+| `apply_to_dense` | `false` | Pasa las máscaras a `DensifyPointCloud`. Clave para que los árboles (estáticos, densificables) no entren a la nube. |
+| `backends.segformer.model_id` | SegFormer-B5 Cityscapes | Cualquier checkpoint SegFormer de HF (B2 = más rápido, B5 = mejor). |
+
+Notas de honestidad: enmascarar `vegetation` elimina árboles pero **deja
+huecos** donde tapaban fachada (solo más cobertura los rellena); los **cables**
+no son segmentables (2 px de grosor) — se mitigan con `dilate_px` sobre los
+postes y `remove-spurious` en la malla. Imágenes con >80% enmascarado se
+reportan en `metrics/masks_info.json`.
+
+Requisitos: `containers/segmentation.sif` + pesos descargados (ver
+`containers/README.md`). La etapa es autónoma:
+
+```bash
+# Solo generar/inspeccionar máscaras (sin reconstruir nada):
+apptainer exec --nv containers/segmentation.sif \
+    python3 -m pipeline run --config <cfg> --scene <escena> --stages masks
+```
+
+En SLURM no hay que hacer nada especial: `pipeline.sbatch` detecta
+`masking.enabled` y ejecuta la fase de máscaras en el contenedor de
+segmentación antes del run principal.
+
 ## `colmap`
 
 | Clave | Default | Descripción |

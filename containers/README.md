@@ -12,6 +12,24 @@ solo cambia la última pieza:
    utilizable por sí sola para frames/sfm/undistort y el denso de COLMAP.
 2. `photogrammetry.def` → `photogrammetry.sif`: `base.sif` + OpenMVS (~15-30 min).
 
+Además hay un contenedor **opcional e independiente** para la etapa de
+enmascaramiento semántico (`masking.enabled: true`):
+
+3. `segmentation.def` → `segmentation.sif`: PyTorch + transformers + SegFormer
+   (~15-20 min de build). Tras construirlo, descargar los pesos del modelo UNA
+   vez en el nodo maestro (los nodos de cómputo no tienen internet y leen la
+   caché compartida `$HOME/.cache/huggingface`):
+
+   ```bash
+   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 segmentation.sif \
+       python3 -c "from transformers import AutoImageProcessor, SegformerForSemanticSegmentation as M; \
+   AutoImageProcessor.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024'); \
+   M.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024')"
+   ```
+
+   Si `masking.enabled: false` (el default), este contenedor no se usa ni se
+   necesita: el pipeline se comporta exactamente igual que antes.
+
 ## Construcción (una sola vez, en el nodo maestro)
 
 Solo el nodo maestro de Khipu tiene internet, y `apptainer build` necesita

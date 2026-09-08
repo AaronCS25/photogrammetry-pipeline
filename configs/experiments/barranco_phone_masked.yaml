@@ -1,0 +1,44 @@
+# Ablación de enmascaramiento: idéntico a barranco_phone_v1 pero con máscaras
+# semánticas (personas, vehículos, vegetación, cielo). Comparar contra
+# barranco_phone_v1 en registration_ratio, ruido de malla y tiempos.
+#
+# Requisitos previos (una vez, nodo maestro):
+#   1. apptainer build containers/segmentation.sif containers/segmentation.def
+#   2. descargar pesos del modelo (comando en containers/README.md)
+#
+# Solo enmascaramiento (etapa suelta, p. ej. para inspeccionar máscaras):
+#   apptainer exec --nv containers/segmentation.sif \
+#       python3 -m pipeline run --config configs/experiments/barranco_phone_masked.yaml \
+#       --scene barranco_phone --stages frames,masks
+
+experiment:
+  name: barranco_phone_masked_v1
+  notes: "534 fotos POCO; mascaras SegFormer (personas/vehiculos/vegetacion/cielo) en sparse y denso."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: segformer
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle, vegetation, sky]
+  dilate_px: 15
+  apply_to_dense: true         # también excluye estos píxeles de la nube densa
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 2400
+    max_num_features: 8192
+  matcher:
+    methods: [sequential, spatial]
+    sequential_overlap: 15
+  undistort:
+    max_image_size: 2400
+
+openmvs:
+  densify:
+    resolution_level: 1

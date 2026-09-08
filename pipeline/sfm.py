@@ -89,6 +89,11 @@ def run_sfm(ctx: Context) -> None:
     ]
     if cfg.get("single_camera_per_source", True):
         cmd += ["--ImageReader.single_camera_per_folder", "1"]
+    if (ctx.cfg.get("masking") or {}).get("enabled"):
+        from .masks import require_masks
+        require_masks(ctx)
+        cmd += ["--ImageReader.mask_path", ctx.masks_dir]
+        print("[sfm] enmascaramiento activo: features solo fuera de las máscaras")
     cmd += extra_args_to_cli(fe.get("extra_args"))
     breakdown["feature_extractor"] = round(run_cmd(cmd, log), 2)
 

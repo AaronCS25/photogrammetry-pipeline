@@ -132,6 +132,22 @@ def run_metrics(ctx: Context, timings: dict[str, float],
         except json.JSONDecodeError:
             pass
 
+    # Enmascaramiento (si la etapa masks dejó su reporte)
+    masks_info_file = ctx.metrics_dir / "masks_info.json"
+    if (ctx.cfg.get("masking") or {}).get("enabled") and masks_info_file.is_file():
+        try:
+            info = json.loads(masks_info_file.read_text(encoding="utf-8"))
+            metrics["masking"] = {
+                "backend": info.get("backend"),
+                "classes": info.get("classes"),
+                "mean_masked_ratio": {
+                    source: data.get("mean_masked_ratio")
+                    for source, data in (info.get("sources") or {}).items()
+                },
+            }
+        except json.JSONDecodeError:
+            pass
+
     # Frames por fuente
     frames: dict[str, int] = {}
     if ctx.frames_dir.is_dir():
