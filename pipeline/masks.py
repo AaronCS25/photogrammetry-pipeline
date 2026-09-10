@@ -24,11 +24,14 @@ from . import mask_backends
 
 
 def colmap_mask_path(image: Path) -> str:
+    """COLMAP: <masks>/<fuente>/<imagen completa>.png (espeja la estructura)."""
     return image.name + ".png"
 
 
 def openmvs_mask_path(image: Path) -> str:
-    return image.name + ".mask.png"
+    """OpenMVS (v2.3.0, comprobado empíricamente): busca PLANO en la raíz de
+    --mask-path, con el stem de la imagen: <masks>/<stem>.mask.png."""
+    return image.stem + ".mask.png"
 
 
 def frame_images(frames_dir: Path) -> dict[str, list[Path]]:
@@ -66,16 +69,28 @@ def require_masks(ctx: Context) -> None:
         )
 
 
-def _link_openmvs_aliases(mask_dir: Path, images: list[Path]) -> None:
-    """Crea <imagen>.mask.png como hardlink de <imagen>.png (cero espacio extra)."""
-    for image in images:
-        src = mask_dir / colmap_mask_path(image)
-        dst = mask_dir / openmvs_mask_path(image)
-        dst.unlink(missing_ok=True)
-        try:
-            os.link(src, dst)
-        except OSError:
-            shutil.copy2(src, dst)
+def _link_openmvs_aliases(ctx: Context, sources: dict[str, list[Path]]) -> None:
+    """Crea en la RAÍZ de masks/ los alias planos <stem>.mask.png que espera
+    OpenMVS, como hardlinks de las máscaras COLMAP (cero espacio extra)."""
+    seen: dict[str, str] = {}
+    for source, images in sources.items():
+        for image in images:
+            alias = openmvs_mask_path(image)
+            owner = f"{source}/{image.name}"
+            if alias in seen:
+                raise CommandError(
+                    f"Colisión de máscaras OpenMVS: '{alias}' corresponde tanto a "
+                    f"{seen[alias]} como a {owner}. Renombrar los archivos para que "
+                    "los stems sean únicos entre fuentes."
+                )
+            seen[alias] = owner
+            src = ctx.masks_dir / source / colmap_mask_path(image)
+            dst = ctx.masks_dir / alias
+            dst.unlink(missing_ok=True)
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copy2(src, dst)
 
 
 def run_masks(ctx: Context) -> None:
@@ -117,7 +132,6 @@ def run_masks(ctx: Context) -> None:
         mask_dir = ctx.masks_dir / source
         mask_dir.mkdir(parents=True, exist_ok=True)
         results = backend.generate(images, mask_dir, mcfg)
-        _link_openmvs_aliases(mask_dir, images)
 
         ratios = [r["masked_ratio"] for r in results]
         mean_ratio = round(sum(ratios) / len(ratios), 4) if ratios else 0.0
@@ -132,6 +146,8 @@ def run_masks(ctx: Context) -> None:
         if heavily_masked:
             print(f"[masks] AVISO: {len(heavily_masked)} imágenes con >80% enmascarado "
                   "(quedará poca señal útil en ellas)")
+
+    _link_openmvs_aliases(ctx, sources)
 
     ctx.metrics_dir.mkdir(parents=True, exist_ok=True)
     with open(ctx.metrics_dir / "masks_info.json", "w", encoding="utf-8") as fh:
