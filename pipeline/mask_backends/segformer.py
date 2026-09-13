@@ -58,7 +58,7 @@ def _dilate(masked, dilate_px: int):
         return np.array(img) > 0
 
 
-def generate(images: list[Path], out_dir: Path, masking_cfg: dict) -> list[dict]:
+def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx=None) -> list[dict]:
     import numpy as np
     import torch
     from PIL import Image
@@ -66,12 +66,14 @@ def generate(images: list[Path], out_dir: Path, masking_cfg: dict) -> list[dict]
 
     backend_cfg = (masking_cfg.get("backends") or {}).get("segformer") or {}
     model_id = backend_cfg.get("model_id", DEFAULT_MODEL)
-    class_ids = resolve_class_ids(masking_cfg.get("classes") or [])
-    dilate_px = int(masking_cfg.get("dilate_px", 15))
+    # Cada backend puede sobreescribir las claves globales en su propio bloque
+    classes = backend_cfg.get("classes", masking_cfg.get("classes")) or []
+    class_ids = resolve_class_ids(classes)
+    dilate_px = int(backend_cfg.get("dilate_px", masking_cfg.get("dilate_px", 15)))
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[masks] backend segformer: modelo={model_id} device={device} "
-          f"clases={masking_cfg.get('classes')} dilate={dilate_px}px")
+          f"clases={classes} dilate={dilate_px}px")
     processor = AutoImageProcessor.from_pretrained(model_id)
     model = SegformerForSemanticSegmentation.from_pretrained(model_id).to(device).eval()
 

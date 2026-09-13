@@ -15,17 +15,27 @@ solo cambia la última pieza:
 Además hay un contenedor **opcional e independiente** para la etapa de
 enmascaramiento semántico (`masking.enabled: true`):
 
-3. `segmentation.def` → `segmentation.sif`: PyTorch + transformers + SegFormer
-   (~15-20 min de build). Tras construirlo, descargar los pesos del modelo UNA
-   vez en el nodo maestro (los nodos de cómputo no tienen internet y leen la
-   caché compartida `$HOME/.cache/huggingface`):
+3. `segmentation.def` → `segmentation.sif` (v2): Ubuntu 24.04 + PyTorch 2.7
+   cu126 + transformers (SegFormer) + paquete oficial de **SAM 3** (~20-30 min
+   de build). Tras construirlo, descargar los pesos UNA vez en el nodo maestro
+   (los nodos de cómputo no tienen internet y leen la caché compartida
+   `$HOME/.cache/huggingface`):
 
    ```bash
+   # SegFormer (público)
    apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 segmentation.sif \
        python3 -c "from transformers import AutoImageProcessor, SegformerForSemanticSegmentation as M; \
    AutoImageProcessor.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024'); \
    M.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024')"
+
+   # SAM 3 (GATED): 1) aceptar la licencia en https://huggingface.co/facebook/sam3
+   #                2) crear un token de lectura en https://huggingface.co/settings/tokens
+   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN=hf_xxxxxxxx segmentation.sif \
+       python3 -c "from sam3.model_builder import build_sam3_image_model; build_sam3_image_model()"
    ```
+
+   SAM 3 solo hace falta si algún experimento lo incluye en `masking.backend`;
+   SegFormer solo funciona con la primera descarga.
 
    Si `masking.enabled: false` (el default), este contenedor no se usa ni se
    necesita: el pipeline se comporta exactamente igual que antes.

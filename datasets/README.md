@@ -56,6 +56,10 @@ datasets/raw/fachada_norte/
 - **Telemetría**: `.srt` de DJI con el mismo nombre base que su video.
 - Una fuente puede mezclar videos y fotos; también pueden convivir fuentes de
   dron (video) y de teléfono (fotos) en una misma escena.
+- **Carpetas reservadas** (no se tratan como fuentes): `mask_overrides/`
+  (máscaras pintadas a mano para el backend `manual`, ver
+  `docs/configuration.md`) y cualquier subcarpeta con prefijo `_` o `.`
+  (útil para notas, descartes, etc.).
 
 ## Subir datos a Khipu
 

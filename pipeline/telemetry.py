@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 from .config import Context
-from .frames import discover_sources
+from .frames import discover_sources, reserved_dirs
 
 _PATTERNS = {
     "latitude": re.compile(r"\[latitude\s*:\s*(-?\d+(?:\.\d+)?)\]", re.IGNORECASE),
@@ -53,7 +53,7 @@ def parse_srt(srt_path: Path) -> list[dict]:
 
 def run_telemetry(ctx: Context) -> None:
     found = 0
-    for source, media in discover_sources(ctx.raw_dir).items():
+    for source, media in discover_sources(ctx.raw_dir, reserved_dirs(ctx.cfg)).items():
         for video in media["videos"]:
             candidates = [video.with_suffix(ext) for ext in (".srt", ".SRT")]
             srt = next((c for c in candidates if c.is_file()), None)

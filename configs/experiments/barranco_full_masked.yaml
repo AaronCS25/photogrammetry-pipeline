@@ -1,0 +1,54 @@
+# El experimento de síntesis: dron (2 cuadras) + teléfono (1 cuadra) + máscaras
+# semánticas completas (incluye postes y señalética) + limpieza agresiva de malla.
+# Combina todo lo aprendido en la campaña de septiembre 2026:
+#   - vocab_tree une las dos fuentes (full_v1: 926/927 registradas)
+#   - máscaras recuperan registro y eliminan geometría espuria (phone_masked_v1:
+#     87%->99.8% de registro, -15% caras)
+#   - pole/traffic_* atacan los postes; remove-spurious 40 los restos de cables
+#   - refine con dieta (decimate/scales/resolution-level) para el límite de
+#     130G RAM por usuario en Khipu
+# Escena: datasets/raw/barranco_full (drone/ + phone/), la misma de full_v1.
+
+experiment:
+  name: barranco_full_masked_v1
+  notes: "Dron+telefono con mascaras SegFormer (dinamicos+vegetacion+cielo+postes) en sparse y denso; remove-spurious 40."
+
+frames:
+  resize: null                    # fotos del telefono intactas (EXIF)
+
+sources:
+  drone:
+    fps: 2
+    resize: {long_edge: 1920}     # el video si se reescala
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: segformer
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle,
+            vegetation, sky, pole, traffic_light, traffic_sign]
+  dilate_px: 15
+  apply_to_dense: true
+
+colmap:
+  camera_model: OPENCV
+  matcher:
+    methods: [sequential, vocab_tree]
+    sequential_overlap: 15
+    vocab_tree_path: resources/vocab_tree_flickr100K_words256K.bin
+  undistort:
+    max_image_size: 2400
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    decimate: 0.7
+    extra_args:
+      remove-spurious: 40         # agresivo con fragmentos flotantes (cables, ruido)
+  refine:
+    scales: 1
+    extra_args:
+      resolution-level: 2         # dieta de RAM: cabe en los 130G del QOS

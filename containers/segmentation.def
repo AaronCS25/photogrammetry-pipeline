@@ -1,62 +1,83 @@
 Bootstrap: docker
-From: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+From: nvidia/cuda:12.6.3-runtime-ubuntu24.04
 
 # =============================================================================
-# Contenedor de SEGMENTACIÓN (etapa 'masks' del pipeline).
-# Separado del de fotogrametría a propósito: torch/transformers pesan varios GB
-# y solo se necesitan para generar máscaras.
+# Contenedor de SEGMENTACIÓN (etapa 'masks' del pipeline), v2.
+# Sirve a todos los backends de máscaras: SegFormer (transformers), SAM 3
+# (paquete oficial de Meta) y manual. Separado del de fotogrametría a
+# propósito: PyTorch pesa varios GB y solo se necesita para generar máscaras.
 #
-# Construcción (nodo maestro):
-#   apptainer build segmentation.sif segmentation.def          (~15-20 min)
+# Base Ubuntu 24.04 (Python 3.12) + PyTorch 2.7 cu126: son los requisitos
+# mínimos de SAM 3 (Python >= 3.12, torch >= 2.7, CUDA >= 12.6).
 #
-# Descarga de pesos del modelo (UNA vez, nodo maestro — los nodos de cómputo
-# no tienen internet y leerán la caché de $HOME/.cache/huggingface):
-#   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 \
-#       segmentation.sif python3 -c "from transformers import AutoImageProcessor, \
+# Construcción (nodo maestro, en tmux):
+#   apptainer build segmentation.sif segmentation.def          (~20-30 min)
+#
+# Pesos (UNA vez, nodo maestro; los nodos de cómputo leen la caché compartida
+# $HOME/.cache/huggingface en modo offline):
+#
+#   # SegFormer (público):
+#   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 segmentation.sif \
+#       python3 -c "from transformers import AutoImageProcessor, \
 #       SegformerForSemanticSegmentation as M; \
 #       AutoImageProcessor.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024'); \
 #       M.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024')"
 #
-# En runtime el contenedor fuerza modo offline (HF_HUB_OFFLINE=1) para que los
-# nodos de cómputo no intenten conectarse a Hugging Face.
+#   # SAM 3 (GATED: antes aceptar la licencia en https://huggingface.co/facebook/sam3
+#   # y crear un token de lectura en https://huggingface.co/settings/tokens):
+#   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN=hf_xxx segmentation.sif \
+#       python3 -c "from sam3.model_builder import build_sam3_image_model; build_sam3_image_model()"
 # =============================================================================
 
 %labels
     Author  UTEC PFC-II Photogrammetry
-    Purpose Segmentación semántica para máscaras (SegFormer y backends futuros)
+    Purpose Segmentación semántica para máscaras (SegFormer + SAM 3 + manual)
 
 %post
     set -e
-    # ffmpeg: la fase pre-masks también puede ejecutar la etapa 'frames'
-    # (p. ej. con --force), así que este contenedor debe poder extraer frames.
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends ffmpeg
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev git ca-certificates ffmpeg \
+        libgl1 libglib2.0-0
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-    # torchvision fijado a la versión que empareja con el torch 2.4.1 de la
-    # imagen base (evita que pip reinstale torch); lo requieren los
-    # image processors de transformers.
-    pip install --no-cache-dir \
-        torchvision==0.19.1 \
-        transformers==4.44.2 \
-        pillow \
-        opencv-python-headless \
-        pyyaml
+    # Ubuntu 24.04 protege el Python del sistema; en un contenedor es seguro
+    # instalar directamente.
+    PIP="pip3 install --no-cache-dir --break-system-packages"
+
+    # numpy<2 desde el principio: sam3 lo exige y así pip no degrada a
+    # posteriori lo ya instalado (conflicto silencioso en el log de build).
+    $PIP "numpy<2"
+
+    # PyTorch 2.7 con CUDA 12.6 (par torch/torchvision fijado)
+    $PIP torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
+
+    # SegFormer y utilidades del pipeline (transformers fijado: validado en Khipu)
+    $PIP transformers==4.44.2 pillow opencv-python-headless pyyaml huggingface_hub
+
+    # SAM 3 (paquete oficial). Los pesos se descargan aparte (ver cabecera).
+    # SAM3_REF: rama/tag/commit a instalar. Tras el primer build exitoso,
+    # fijar aquí el commit que aparece en /opt/sam3/COMMIT para reproducibilidad.
+    SAM3_REF="main"
+    git clone https://github.com/facebookresearch/sam3.git /opt/sam3
+    git -C /opt/sam3 checkout "$SAM3_REF"
+    git -C /opt/sam3 rev-parse HEAD | tee /opt/sam3/COMMIT
+    $PIP /opt/sam3
 
 %environment
     export LC_ALL=C
     # Los nodos de cómputo no tienen internet: usar solo la caché local de HF.
-    # Para DESCARGAR pesos en el maestro, sobreescribir con:
-    #   apptainer exec --env HF_HUB_OFFLINE=0 --env TRANSFORMERS_OFFLINE=0 ...
+    # Para DESCARGAR pesos en el maestro, sobreescribir con --env HF_HUB_OFFLINE=0
     export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
     export TRANSFORMERS_OFFLINE=${TRANSFORMERS_OFFLINE:-1}
 
 %test
     set -e
     command -v ffmpeg
-    python3 -c "import torch; import transformers; import cv2; import yaml; import PIL"
-    echo "OK segmentacion: torch $(python3 -c 'import torch; print(torch.__version__)')"
+    python3 -c "import torch, transformers, cv2, yaml, PIL, numpy; print('torch', torch.__version__)"
+    python3 -c "import sam3; print('sam3 importable')"
+    echo "OK segmentacion v2: SegFormer + SAM 3 listos"
 
 %runscript
     exec "$@"

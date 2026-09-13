@@ -29,7 +29,25 @@ def _is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTS
 
 
-def discover_sources(raw_dir: Path) -> dict[str, dict[str, list[Path]]]:
+# Carpetas de la escena que NO son fuentes de imágenes (a cualquier nivel):
+# máscaras pintadas a mano (backend 'manual') y cualquier carpeta auxiliar con
+# prefijo '_' o '.'. `reserved_dirs(cfg)` añade la carpeta de overrides
+# configurada si se cambió el nombre por defecto.
+RESERVED_DIRS = {"mask_overrides"}
+
+
+def reserved_dirs(cfg: dict | None) -> set[str]:
+    names = set(RESERVED_DIRS)
+    manual_cfg = (((cfg or {}).get("masking") or {}).get("backends") or {}).get("manual") or {}
+    override = manual_cfg.get("dir")
+    if override:
+        p = Path(override)
+        if not p.is_absolute() and p.parts:
+            names.add(p.parts[0])
+    return names
+
+
+def discover_sources(raw_dir: Path, reserved: set[str] | None = None) -> dict[str, dict[str, list[Path]]]:
     """Mapa fuente -> {'videos': [...], 'photos': [...]}. Media en la raíz de la
     escena => fuente 'main'; cada subcarpeta con media es una fuente propia.
 
@@ -37,7 +55,10 @@ def discover_sources(raw_dir: Path) -> dict[str, dict[str, list[Path]]]:
     píxel (por `single_camera_per_folder`); fotos verticales (píxeles rotados)
     van en su propia subcarpeta.
     """
-    sources: dict[str, dict[str, list[Path]]] = {}
+    reserved_names = set(RESERVED_DIRS) | set(reserved or ())
+
+    def is_reserved(name: str) -> bool:
+        return name in reserved_names or name.startswith(("_", "."))
 
     def collect(paths: list[Path]) -> dict[str, list[Path]] | None:
         videos = sorted(p for p in paths if _is_video(p))
@@ -46,14 +67,19 @@ def discover_sources(raw_dir: Path) -> dict[str, dict[str, list[Path]]]:
             return {"videos": videos, "photos": photos}
         return None
 
+    sources: dict[str, dict[str, list[Path]]] = {}
     root = collect(list(raw_dir.iterdir()))
     if root:
         sources["main"] = root
     for entry in sorted(raw_dir.iterdir()):
-        if entry.is_dir():
-            media = collect(list(entry.rglob("*")))
-            if media:
-                sources[entry.name] = media
+        if not entry.is_dir() or is_reserved(entry.name):
+            continue
+        # Excluir también carpetas reservadas anidadas dentro de la fuente
+        paths = [p for p in entry.rglob("*")
+                 if not any(is_reserved(part) for part in p.relative_to(entry).parts[:-1])]
+        media = collect(paths)
+        if media:
+            sources[entry.name] = media
     return sources
 
 
@@ -171,7 +197,7 @@ def _ingest_photos(ctx: Context, source: str, photos: list[Path],
 
 
 def run_frames(ctx: Context) -> None:
-    sources = discover_sources(ctx.raw_dir)
+    sources = discover_sources(ctx.raw_dir, reserved_dirs(ctx.cfg))
     if not sources:
         raise CommandError(
             f"No se encontró media en {ctx.raw_dir} (videos: "

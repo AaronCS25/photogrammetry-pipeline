@@ -59,7 +59,11 @@ features sobre obstáculos) y opcionalmente en OpenMVS
 | Clave | Default | Descripción |
 |---|---|---|
 | `enabled` | `false` | Con `false` el pipeline es idéntico al flujo sin máscaras (ni requiere el contenedor de segmentación). |
-| `backend` | `segformer` | Pieza intercambiable: módulo en `pipeline/mask_backends/`. Para añadir otro modelo se crea un módulo con el mismo contrato y se registra — sin tocar el resto del pipeline. |
+| `backend` | `segformer` | Un nombre **o una lista** de backends encadenados (`[segformer, sam3, manual]`): cada uno genera su máscara y se fusionan (se ignora todo píxel que cualquiera ignore). Módulos en `pipeline/mask_backends/`; añadir otro modelo = un módulo con el mismo contrato + registrarlo. |
+| `backends.<nombre>.classes` / `.dilate_px` | (globales) | Cada backend puede sobreescribir `classes` y `dilate_px` en su propio bloque; si no, hereda los globales. Así cada pieza del lego se configura sola sin afectar a las demás. |
+| `backends.sam3.prompts` | `[power line, electric cable, wire, utility pole]` | SAM 3 segmenta por texto libre (sustantivos simples). Fuerte en estructuras finas — el remedio para cables. Pesos *gated* en HF (`facebook/sam3`): aceptar licencia y descargar con token en el maestro. |
+| `backends.sam3.score_threshold` | `0.5` | Confianza mínima por instancia detectada. |
+| `backends.manual.dir` | `mask_overrides` | Carpeta (relativa a `datasets/raw/<escena>/`) con PNGs pintados a mano (`<imagen>.png`, negro = ignorar), opcionalmente en subcarpeta por fuente. Encadenado con los automáticos, las ediciones **sobreviven a regeneraciones**. |
 | `classes` | dinámicos + `sky` | Qué enmascarar (vocabulario Cityscapes en segformer: `person rider car truck bus train motorcycle bicycle vegetation terrain sky pole traffic_light traffic_sign building road ...`). |
 | `dilate_px` | `15` | Margen alrededor de cada objeto. También absorbe el desplazamiento de la undistorsión cuando `apply_to_dense: true`. |
 | `apply_to_dense` | `false` | Pasa las máscaras a `DensifyPointCloud`. Clave para que los árboles (estáticos, densificables) no entren a la nube. |

@@ -72,7 +72,15 @@ telemetry:
 # -----------------------------------------------------------------------------
 masking:
   enabled: false
-  backend: segformer          # pieza intercambiable: ver pipeline/mask_backends/
+  # Backend(s) de segmentación — pieza intercambiable (pipeline/mask_backends/).
+  # Un nombre o una LISTA para encadenar: las máscaras se fusionan (se ignora
+  # todo píxel que cualquier backend ignore). Disponibles:
+  #   segformer -> SegFormer-B5 Cityscapes: clases urbanas estándar (rápido)
+  #   sam3      -> SAM 3 (Meta): prompts de texto libre; fuerte en estructuras
+  #                finas (cables, postes). Requiere pesos gated de HF.
+  #   manual    -> PNGs pintados a mano en datasets/raw/<escena>/mask_overrides/
+  # Ejemplo de cadena completa: backend: [segformer, sam3, manual]
+  backend: segformer
   # Clases a enmascarar (vocabulario del backend; segformer usa Cityscapes):
   #   person rider car truck bus train motorcycle bicycle
   #   vegetation terrain sky pole traffic_light traffic_sign building road ...
@@ -82,9 +90,20 @@ masking:
   classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky]
   dilate_px: 15               # margen (px) alrededor de cada objeto enmascarado
   apply_to_dense: false       # pasar máscaras también a DensifyPointCloud (OpenMVS)
+  # Configuración por backend. `classes` y `dilate_px` globales son el default;
+  # cada bloque puede sobreescribirlos (p. ej. más dilatación para cables finos).
   backends:
     segformer:
       model_id: nvidia/segformer-b5-finetuned-cityscapes-1024-1024
+      # classes: [...]       # opcional: sobreescribe masking.classes solo aquí
+      # dilate_px: 15        # opcional: sobreescribe masking.dilate_px solo aquí
+    sam3:
+      prompts: [power line, electric cable, wire, utility pole]   # sustantivos simples
+      score_threshold: 0.5    # confianza mínima por instancia detectada
+      checkpoint: null        # ruta local a pesos; null = caché de Hugging Face
+      # dilate_px: 25        # opcional: los cables agradecen más margen
+    manual:
+      dir: mask_overrides     # relativo a datasets/raw/<escena>/ (o ruta absoluta)
 
 # -----------------------------------------------------------------------------
 # Etapa 3-4: COLMAP (Structure-from-Motion sparse + undistort)

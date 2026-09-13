@@ -124,7 +124,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
     print(f"Salida:      {ctx.out_dir}")
     print(f"Backend denso: {cfg['dense'].get('backend')}")
 
-    sources = frames_mod.discover_sources(ctx.raw_dir)
+    sources = frames_mod.discover_sources(ctx.raw_dir, frames_mod.reserved_dirs(cfg))
     if not sources:
         print("ERROR: no se encontraron videos ni fotos en la escena.", file=sys.stderr)
         return 1
@@ -168,20 +168,45 @@ def cmd_validate(args: argparse.Namespace) -> int:
     mcfg = cfg.get("masking") or {}
     if mcfg.get("enabled"):
         from . import mask_backends
-        backend = mask_backends.get_backend(mcfg.get("backend", "segformer"))
-        if hasattr(backend, "resolve_class_ids"):
-            backend.resolve_class_ids(mcfg.get("classes") or [])
-        print(f"\nEnmascaramiento: backend={mcfg.get('backend')} "
-              f"clases={mcfg.get('classes')} dilate={mcfg.get('dilate_px')}px "
+        from .masks import backend_names, effective_classes
+        names = backend_names(mcfg)
+        backends = [(n, mask_backends.get_backend(n)) for n in names]
+        print(f"\nEnmascaramiento: backends={names} dilate={mcfg.get('dilate_px')}px "
               f"dense={'sí' if mcfg.get('apply_to_dense') else 'no'}")
+        for name, backend in backends:
+            if hasattr(backend, "resolve_class_ids"):
+                classes = effective_classes(mcfg, name)
+                backend.resolve_class_ids(classes)
+                print(f"  {name}: clases={classes}")
+        if "sam3" in names:
+            sam_cfg = (mcfg.get("backends") or {}).get("sam3") or {}
+            print(f"  sam3 prompts={sam_cfg.get('prompts')} umbral={sam_cfg.get('score_threshold')}")
+        if "manual" in names:
+            from .mask_backends import manual as manual_mod
+            base = manual_mod.override_dir(mcfg, ctx)
+            total_png = len(list(base.rglob("*.png"))) if base.is_dir() else 0
+            # Solo cuentan los overrides que corresponden a una foto real de la
+            # escena (los frames de video aún no existen en validate)
+            matched = sum(
+                1 for source, media in sources.items()
+                for photo in media["photos"]
+                if manual_mod.find_override(photo.name, source, base) is not None
+            )
+            print(f"  manual: {matched} override(s) aplicables a fotos de la escena "
+                  f"({total_png} PNG en {base})")
+            if total_png > matched:
+                print(f"  AVISO: {total_png - matched} PNG no coinciden con ninguna foto — "
+                      "deben llamarse <imagen>.png (ej. IMG_0001.jpg.png), en la raíz de "
+                      "la carpeta o en la subcarpeta de su fuente")
         from .config import REPO_ROOT
         seg_container = REPO_ROOT / "containers" / "segmentation.sif"
         if not seg_container.is_file():
             print(f"  AVISO: no existe {seg_container} — construirlo antes de lanzar "
                   "(ver containers/README.md), o la fase de máscaras fallará.")
-        if not backend.is_available():
-            print("  (backend no disponible en ESTE entorno: las máscaras se generan "
-                  "en el contenedor de segmentación — comportamiento esperado)")
+        unavailable = [n for n, b in backends if not b.is_available()]
+        if unavailable:
+            print(f"  (backends {unavailable} no disponibles en ESTE entorno: las máscaras "
+                  "se generan en el contenedor de segmentación — comportamiento esperado)")
 
     print("\nBinarios en PATH:")
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):
@@ -233,11 +258,20 @@ def main() -> int:
     p_rep.add_argument("--output", help="Ruta del CSV de salida")
     p_rep.set_defaults(func=cmd_report)
 
+    # Salida robusta a terminales/pipes sin UTF-8 (Windows, redirecciones);
+    # antes de parse_args para que también cubra los mensajes de argparse.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     args = parser.parse_args()
     try:
         return args.func(args)
     except ConfigError as exc:
         print(f"ERROR de configuración: {exc}", file=sys.stderr)
+        return 2
+    except CommandError as exc:
+        # Errores de validación fuera de una etapa (p. ej. clases no soportadas)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
 
