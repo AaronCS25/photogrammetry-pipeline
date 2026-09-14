@@ -1,0 +1,56 @@
+# Estreno de la cadena de backends: SegFormer (clases urbanas) + SAM 3 (cables
+# y postes por texto libre). Idéntico a barranco_full_masked salvo la cadena,
+# para atribuir cualquier diferencia a SAM 3.
+#
+# Requisitos: segmentation.sif v2 + pesos de SegFormer y SAM 3 descargados en el
+# maestro (containers/README.md). Primer run real de sam3: los puntos VERIFICAR
+# del backend se confirman aquí.
+
+experiment:
+  name: barranco_full_masked_sam3_v1
+  notes: "Dron+telefono; mascaras SegFormer (12 clases) + SAM 3 (power line/cable/wire/utility pole); remove-spurious 40."
+
+frames:
+  resize: null
+
+sources:
+  drone:
+    fps: 2
+    resize: {long_edge: 1920}
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [segformer, sam3]
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle,
+            vegetation, sky, pole, traffic_light, traffic_sign]
+  dilate_px: 15
+  apply_to_dense: true
+  backends:
+    sam3:
+      prompts: [power line, electric cable, wire, utility pole, lamp post]
+      score_threshold: 0.4
+      dilate_px: 25              # los cables finos agradecen más margen
+
+colmap:
+  camera_model: OPENCV
+  matcher:
+    methods: [sequential, vocab_tree]
+    sequential_overlap: 15
+    vocab_tree_path: resources/vocab_tree_flickr100K_words256K.bin
+  undistort:
+    max_image_size: 2400
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    decimate: 0.7
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 1
+    extra_args:
+      resolution-level: 2
