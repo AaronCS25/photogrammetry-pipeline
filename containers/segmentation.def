@@ -46,23 +46,32 @@ From: nvidia/cuda:12.6.3-runtime-ubuntu24.04
     # instalar directamente.
     PIP="pip3 install --no-cache-dir --break-system-packages"
 
-    # numpy<2 desde el principio: sam3 lo exige y así pip no degrada a
-    # posteriori lo ya instalado (conflicto silencioso en el log de build).
-    $PIP "numpy<2"
+    # numpy<2 como RESTRICCIÓN GLOBAL (sam3 lo exige): un simple `pip install
+    # "numpy<2"` al inicio no basta, porque opencv reciente arrastra numpy 2.x y
+    # luego sam3 lo degrada, dejando paquetes compilados contra otro numpy.
+    # Con PIP_CONSTRAINT cada pip resuelve versiones compatibles desde el inicio.
+    # setuptools<81: sam3.model_builder importa pkg_resources (retirado en 81).
+    printf 'numpy<2\nsetuptools<81\n' > /opt/pip-constraints.txt
+    export PIP_CONSTRAINT=/opt/pip-constraints.txt
+    $PIP "numpy<2" "setuptools<81"
 
-    # PyTorch 2.7 con CUDA 12.6 (par torch/torchvision fijado)
+    # PyTorch 2.7 con CUDA 12.6 (par torch/torchvision fijado; trae triton)
     $PIP torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
 
     # SegFormer y utilidades del pipeline (transformers fijado: validado en Khipu)
     $PIP transformers==4.44.2 pillow opencv-python-headless pyyaml huggingface_hub
 
     # SAM 3 (paquete oficial). Los pesos se descargan aparte (ver cabecera).
-    # SAM3_REF: rama/tag/commit a instalar. Tras el primer build exitoso,
-    # fijar aquí el commit que aparece en /opt/sam3/COMMIT para reproducibilidad.
-    SAM3_REF="main"
+    # Commit fijado: su cadena de imports de inferencia (import sam3,
+    # model_builder, sam3_image_processor) se trazó estáticamente. Dependencias
+    # DURAS de esa cadena que sam3 no declara en pyproject (solo en extras o en
+    # ninguno): einops, psutil, pycocotools, pkg_resources. Al cambiar el commit,
+    # repetir el trazado o confiar en el %test, que importa la cadena completa.
+    SAM3_REF="660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7"
     git clone https://github.com/facebookresearch/sam3.git /opt/sam3
     git -C /opt/sam3 checkout "$SAM3_REF"
     git -C /opt/sam3 rev-parse HEAD | tee /opt/sam3/COMMIT
+    $PIP einops psutil pycocotools
     $PIP /opt/sam3
 
 %environment
@@ -76,7 +85,9 @@ From: nvidia/cuda:12.6.3-runtime-ubuntu24.04
     set -e
     command -v ffmpeg
     python3 -c "import torch, transformers, cv2, yaml, PIL, numpy; print('torch', torch.__version__)"
-    python3 -c "import sam3; print('sam3 importable')"
+    python3 -c "import numpy; assert numpy.__version__.startswith('1.'), numpy.__version__; print('numpy', numpy.__version__)"
+    # Exactamente la API que usa pipeline/mask_backends/sam3.py
+    python3 -c "import sam3; from sam3.model_builder import build_sam3_image_model; from sam3.model.sam3_image_processor import Sam3Processor; print('sam3 importable, commit', open('/opt/sam3/COMMIT').read().strip())"
     echo "OK segmentacion v2: SegFormer + SAM 3 listos"
 
 %runscript
