@@ -24,9 +24,12 @@ From: nvidia/cuda:12.6.3-runtime-ubuntu24.04
 #       M.from_pretrained('nvidia/segformer-b5-finetuned-cityscapes-1024-1024')"
 #
 #   # SAM 3 (GATED: antes aceptar la licencia en https://huggingface.co/facebook/sam3
-#   # y crear un token de lectura en https://huggingface.co/settings/tokens):
-#   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN=hf_xxx segmentation.sif \
-#       python3 -c "from sam3.model_builder import build_sam3_image_model; build_sam3_image_model()"
+#   # y crear un token de lectura en https://huggingface.co/settings/tokens).
+#   # Solo descarga (no construye el modelo: el maestro no tiene GPU):
+#   read -s -p "HF token: " HF_TOKEN; echo
+#   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN="$HF_TOKEN" segmentation.sif \
+#       python3 -c "from sam3.model_builder import download_ckpt_from_hf as d; print(d('sam3'))"
+#   unset HF_TOKEN
 # =============================================================================
 
 %labels

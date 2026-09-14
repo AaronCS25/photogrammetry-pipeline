@@ -30,12 +30,17 @@ enmascaramiento semántico (`masking.enabled: true`):
 
    # SAM 3 (GATED): 1) aceptar la licencia en https://huggingface.co/facebook/sam3
    #                2) crear un token de lectura en https://huggingface.co/settings/tokens
-   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN=hf_xxxxxxxx segmentation.sif \
-       python3 -c "from sam3.model_builder import build_sam3_image_model; build_sam3_image_model()"
+   # Solo descarga, sin construir el modelo (el maestro no tiene GPU). El token
+   # se pega en un prompt oculto para que no quede en ~/.bash_history.
+   read -s -p "HF token: " HF_TOKEN; echo
+   apptainer exec --env HF_HUB_OFFLINE=0 --env HF_TOKEN="$HF_TOKEN" segmentation.sif \
+       python3 -c "from sam3.model_builder import download_ckpt_from_hf as d; print(d('sam3'))"
+   unset HF_TOKEN
    ```
 
    SAM 3 solo hace falta si algún experimento lo incluye en `masking.backend`;
-   SegFormer solo funciona con la primera descarga.
+   SegFormer solo funciona con la primera descarga. La inferencia de SAM 3 usa
+   bfloat16: pedir GPU Ampere (`--gres=shard:rtxa6000:N` o `shard:a100:N`), no T4.
 
    Si `masking.enabled: false` (el default), este contenedor no se usa ni se
    necesita: el pipeline se comporta exactamente igual que antes.

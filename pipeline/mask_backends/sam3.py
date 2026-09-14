@@ -11,10 +11,13 @@ Config (masking.backends.sam3):
   score_threshold: 0.5      # confianza mínima de cada instancia detectada
   checkpoint: null          # ruta local a los pesos; null = caché de HF
 
-NOTA: la API del paquete sam3 se tomó del README oficial (build_sam3_image_model,
-Sam3Processor.set_image / set_text_prompt). Los puntos marcados VERIFICAR se
-confirman en el primer run real; los mensajes de error están pensados para
-diagnosticarlos rápido.
+API verificada contra el código de sam3 @ 660a5e9e (commit fijado en
+containers/segmentation.def): build_sam3_image_model(checkpoint_path=...),
+Sam3Processor(model, confidence_threshold=...), set_text_prompt devuelve
+"masks" bool (N, 1, H, W) ya a la resolución original y "scores" filtrados.
+La inferencia exige autocast bfloat16 (el MLP del backbone castea a bf16 sin
+condición, como en los notebooks oficiales) → GPU Ampere o superior
+(A6000/A100); en T4 (Turing) bf16 no está soportado de forma nativa.
 """
 
 from __future__ import annotations
@@ -62,6 +65,24 @@ def _to_bool_mask(mask, height: int, width: int):
 
 
 def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx) -> list[dict]:
+    import torch
+
+    if not torch.cuda.is_available():
+        raise CommandError("SAM 3 requiere GPU (Sam3Processor corre en 'cuda').")
+    major, minor = torch.cuda.get_device_capability()
+    if major < 8:
+        print(f"[masks] AVISO: GPU {torch.cuda.get_device_name()} (compute {major}.{minor}) "
+              "sin bfloat16 nativo; SAM 3 puede fallar o ir muy lento. Pedir A6000/A100: "
+              "--gres=shard:rtxa6000:N o shard:a100:N")
+    # Igual que los notebooks oficiales de sam3: TF32 + autocast bf16 durante
+    # toda la inferencia (sin autocast, el MLP del ViT mezcla bf16 y float32).
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        return _generate(images, out_dir, masking_cfg)
+
+
+def _generate(images: list[Path], out_dir: Path, masking_cfg: dict) -> list[dict]:
     import numpy as np
     from PIL import Image
     from .segformer import _dilate
@@ -69,7 +90,7 @@ def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx) -> list[
     try:
         from sam3.model_builder import build_sam3_image_model
         from sam3.model.sam3_image_processor import Sam3Processor
-    except ImportError as exc:  # VERIFICAR: rutas de import según versión del repo
+    except ImportError as exc:
         raise CommandError(f"No se pudo importar la API de sam3 ({exc}). "
                            "Revisar la versión instalada en containers/segmentation.def")
 
@@ -84,7 +105,6 @@ def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx) -> list[
 
     print(f"[masks] backend sam3: prompts={prompts} umbral={threshold} dilate={dilate_px}px")
     try:
-        # VERIFICAR: nombre del kwarg para pesos locales (checkpoint_path) si se usa
         model = build_sam3_image_model(checkpoint_path=checkpoint) if checkpoint \
             else build_sam3_image_model()
     except Exception as exc:
@@ -94,12 +114,7 @@ def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx) -> list[
         )
     # El procesador filtra internamente por confianza (default 0.5); pasarle
     # nuestro umbral para que score_threshold < 0.5 tenga efecto real.
-    try:
-        processor = Sam3Processor(model, confidence_threshold=threshold)
-    except TypeError:  # VERIFICAR: nombre del kwarg en la versión instalada
-        print("[masks] AVISO: Sam3Processor no acepta confidence_threshold; "
-              "umbrales < 0.5 no tendrán efecto (filtro interno del modelo)")
-        processor = Sam3Processor(model)
+    processor = Sam3Processor(model, confidence_threshold=threshold)
 
     results = []
     for i, img_path in enumerate(images, 1):
