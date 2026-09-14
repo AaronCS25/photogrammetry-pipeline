@@ -4,6 +4,9 @@ datasets/raw/*
 outputs/*
 !outputs/.gitkeep
 
+# Recursos binarios descargados (vocab tree de COLMAP, etc.)
+resources/
+
 # Imágenes de contenedor y logs de build
 *.sif
 containers/build*.log
