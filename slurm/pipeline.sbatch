@@ -32,6 +32,11 @@
 
 set -euo pipefail
 
+# Con stdout redirigido a archivo Python bufferiza los print: sin esto el
+# progreso ([masks] N/M, etc.) llega al log con minutos de retraso.
+# Apptainer hereda el entorno del host, así que aplica dentro de los contenedores.
+export PYTHONUNBUFFERED=1
+
 CONFIG="${1:?Uso: sbatch slurm/pipeline.sbatch <config.yaml> [escena] [args extra...]}"
 shift
 
