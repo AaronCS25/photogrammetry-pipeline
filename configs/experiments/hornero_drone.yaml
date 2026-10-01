@@ -1,0 +1,49 @@
+# Manzana completa (El Hornero, Barranco) — fotos de dron, 17-sep-2026.
+# 77 fotos DJI 36 MP (8064x4536), todas con GPS, mayormente OBLICUAS
+# (gimbal -20° a -50°), alturas 4-52 m: buena geometría para fachadas.
+#
+# Escena: datasets/raw/hornero/drone/  (DJI_..._0119_D a DJI_..._0195_D)
+# Cuando lleguen las fotos del teléfono: datasets/raw/hornero/phone/ y usar
+# un experimento con vocab_tree (ver barranco_full_masked_sam3.yaml).
+
+experiment:
+  name: hornero_drone_v1
+  notes: "Manzana completa, 77 fotos dron 36MP oblicuas; exhaustive; mascaras SegFormer+SAM3; refine completo."
+
+frames:
+  resize: null                  # fotos intactas: EXIF con focal y GPS
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [segformer, sam3]    # SAM 3 exige GPU Ampere (A6000/A100)
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle,
+            vegetation, sky, pole, traffic_light, traffic_sign]
+  dilate_px: 15
+  apply_to_dense: true
+  backends:
+    sam3:
+      prompts: [power line, electric cable, wire, utility pole, lamp post]
+      score_threshold: 0.4
+      dilate_px: 25
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 3200        # 36 MP: aprovechar más detalle que con el video
+    max_num_features: 12000
+  matcher:
+    methods: [exhaustive]       # 77 fotos = ~2900 pares: barato y lo más robusto en órbita
+  undistort:
+    max_image_size: 3200
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 2                   # refinado completo: 77 vistas caben en 130 GB

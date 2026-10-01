@@ -1,0 +1,54 @@
+# Manzana El Hornero (Barranco): dron + teléfono, con máscaras SegFormer + SAM 3.
+#
+# Escena: datasets/raw/hornero/
+#   drone/  77 fotos DJI 36 MP (8064x4536), oblicuas, GPS   (17-sep-2026)
+#   phone/  148 fotos 8 MP (3280x2464), horizontales, SIN EXIF (exportadas
+#           por una app: sin focal, sin GPS, sin fecha; nombres = timestamp de
+#           exportación, no de captura). v2: usar las originales de 16 MP.
+#
+# Matching EXHAUSTIVO: 225 imágenes = ~25k pares (barato en GPU). Es lo más
+# robusto para una órbita, no depende del orden de los nombres ni del GPS, y
+# une las dos fuentes sin vocab_tree (compara todo con todo).
+
+experiment:
+  name: hornero_full_v1
+  notes: "Manzana El Hornero: 77 fotos dron 36MP + 148 fotos telefono 8MP; exhaustive; mascaras SegFormer+SAM3; refine completo."
+
+frames:
+  resize: null                  # fotos intactas: EXIF con focal y GPS
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [segformer, sam3]    # SAM 3 exige GPU Ampere: --gres=shard:rtxa6000:N o shard:a100:N
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle,
+            vegetation, sky, pole, traffic_light, traffic_sign]
+  dilate_px: 15
+  apply_to_dense: true
+  backends:
+    sam3:
+      prompts: [power line, electric cable, wire, utility pole, lamp post]
+      score_threshold: 0.4
+      dilate_px: 25
+
+colmap:
+  camera_model: OPENCV
+  single_camera_per_source: true   # drone/ y phone/ = dos cámaras
+  feature_extractor:
+    max_image_size: 3200
+    max_num_features: 12000
+  matcher:
+    methods: [exhaustive]
+  undistort:
+    max_image_size: 3200
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 2                   # refinado completo: 225 vistas caben en 130 GB
