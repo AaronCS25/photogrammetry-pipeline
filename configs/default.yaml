@@ -90,11 +90,16 @@ masking:
   classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky]
   dilate_px: 15               # margen (px) alrededor de cada objeto enmascarado
   apply_to_dense: false       # pasar máscaras también a DensifyPointCloud (OpenMVS)
+  # apply_to_texture: hereda apply_to_dense. Sin máscaras en TextureMesh, los
+  # píxeles de un objeto enmascarado (ya sin geometría) se proyectan sobre lo
+  # que había detrás ("calcomanías" de autos en el suelo).
+  # apply_to_texture: true
   # Configuración por backend. `classes` y `dilate_px` globales son el default;
   # cada bloque puede sobreescribirlos (p. ej. más dilatación para cables finos).
   backends:
     segformer:
       model_id: nvidia/segformer-b5-finetuned-cityscapes-1024-1024
+      inference_size: 1024   # 2048 para fotos aéreas de alta resolución (objetos pequeños)
       # classes: [...]       # opcional: sobreescribe masking.classes solo aquí
       # dilate_px: 15        # opcional: sobreescribe masking.dilate_px solo aquí
     sam3:

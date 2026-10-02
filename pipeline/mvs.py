@@ -154,6 +154,15 @@ def run_texture(ctx: Context) -> None:
         "-o", SCENE_TEXTURE,
         "--export-type", str(tcfg.get("export_type", "obj")),
     ]
+    mcfg = ctx.cfg.get("masking") or {}
+    if mcfg.get("enabled") and mcfg.get("apply_to_texture", mcfg.get("apply_to_dense", False)):
+        # Sin esto, los píxeles de un auto enmascarado (sin geometría) se
+        # proyectan sobre el suelo que había detrás: "calcomanías" de autos.
+        from .masks import link_masks_next_to_images, require_masks
+        require_masks(ctx)
+        linked = link_masks_next_to_images(ctx, undistorted_dir(ctx) / "images")
+        cmd += ["--ignore-mask-label", "0"]
+        print(f"[texture] enmascaramiento activo en el texturizado ({linked} máscaras enlazadas)")
     cmd += _cuda_args(ctx)
     cmd += extra_args_to_cli(tcfg.get("extra_args"))
     _run(ctx, cmd, "texture.log")

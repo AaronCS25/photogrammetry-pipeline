@@ -131,6 +131,27 @@ def _link_openmvs_aliases(ctx: Context, sources: dict[str, list[Path]]) -> None:
                 shutil.copy2(src, dst)
 
 
+def link_masks_next_to_images(ctx: Context, images_root: Path) -> int:
+    """TextureMesh (OpenMVS v2.3.0) no tiene --mask-path: busca <stem>.mask.png
+    JUNTO a cada imagen. Enlaza ahí (hardlink) las máscaras de masks/ para las
+    imágenes undistorted. Devuelve cuántas se enlazaron."""
+    linked = 0
+    for source, images in frame_images(ctx.frames_dir).items():
+        for image in images:
+            src = ctx.masks_dir / source / colmap_mask_path(image)
+            target_image = images_root / source / image.name
+            if not src.is_file() or not target_image.is_file():
+                continue
+            dst = images_root / source / openmvs_mask_path(image)
+            dst.unlink(missing_ok=True)
+            try:
+                os.link(src, dst)
+            except OSError:
+                shutil.copy2(src, dst)
+            linked += 1
+    return linked
+
+
 def _fuse_masks(images: list[Path], partial_dirs: list[Path], mask_dir: Path) -> list[float]:
     """Fusiona las máscaras parciales de varios backends: se ignora (0) todo
     píxel que cualquier backend ignore. Devuelve el ratio enmascarado final."""

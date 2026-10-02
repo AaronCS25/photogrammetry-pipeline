@@ -71,10 +71,16 @@ def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx=None) -> 
     class_ids = resolve_class_ids(classes)
     dilate_px = int(backend_cfg.get("dilate_px", masking_cfg.get("dilate_px", 15)))
 
+    # Resolución de inferencia: el modelo reescala la foto a este tamaño. 1024
+    # (su default) pierde objetos pequeños en fotos aéreas de 36 MP (un auto a
+    # 30 m queda en ~15 px); 2048 los recupera a costa de 4x cómputo/VRAM.
+    inference_size = int(backend_cfg.get("inference_size", 1024))
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[masks] backend segformer: modelo={model_id} device={device} "
-          f"clases={classes} dilate={dilate_px}px")
-    processor = AutoImageProcessor.from_pretrained(model_id)
+          f"clases={classes} dilate={dilate_px}px inferencia={inference_size}px")
+    processor = AutoImageProcessor.from_pretrained(
+        model_id, size={"height": inference_size, "width": inference_size})
     model = SegformerForSemanticSegmentation.from_pretrained(model_id).to(device).eval()
 
     results = []
