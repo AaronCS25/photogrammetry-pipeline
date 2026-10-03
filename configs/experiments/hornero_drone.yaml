@@ -1,41 +1,51 @@
-# Manzana completa (El Hornero, Barranco) — fotos de dron, 17-sep-2026.
-# 77 fotos DJI 36 MP (8064x4536), todas con GPS, mayormente OBLICUAS
-# (gimbal -20° a -50°), alturas 4-52 m: buena geometría para fachadas.
+# Manzana El Hornero — SOLO DRON (ablación de fuente).
+# 77 fotos DJI 36 MP (8064x4536), oblicuas (gimbal -20° a -50°), con GPS.
 #
-# Escena: datasets/raw/hornero/drone/  (DJI_..._0119_D a DJI_..._0195_D)
-# Cuando lleguen las fotos del teléfono: datasets/raw/hornero/phone/ y usar
-# un experimento con vocab_tree (ver barranco_full_masked_sam3.yaml).
+# Escena: datasets/raw/hornero_drone/drone/   (hardlinks de hornero/drone)
+#   mkdir -p datasets/raw/hornero_drone
+#   cp -al datasets/raw/hornero/drone datasets/raw/hornero_drone/drone
+#
+# Máscaras: SOLO SAM 3 con prompts de objetos. SegFormer-Cityscapes alucina en
+# vista aérea oblicua (enmascaraba fachadas en hornero_full_v2).
 
 experiment:
   name: hornero_drone_v1
-  notes: "Manzana completa, 77 fotos dron 36MP oblicuas; exhaustive; mascaras SegFormer+SAM3; refine completo."
+  notes: "Hornero solo dron (77 fotos 36MP): exhaustive, SIFT afin+guided, mascaras solo SAM3 (objetos), refine completo."
 
 frames:
-  resize: null                  # fotos intactas: EXIF con focal y GPS
+  resize: null
 
 telemetry:
   enabled: false
 
 masking:
   enabled: true
-  backend: [segformer, sam3]    # SAM 3 exige GPU Ampere (A6000/A100)
-  classes: [person, rider, car, truck, bus, motorcycle, bicycle,
-            vegetation, sky, pole, traffic_light, traffic_sign]
+  backend: [sam3]
   dilate_px: 15
   apply_to_dense: true
+  apply_to_texture: true
   backends:
     sam3:
-      prompts: [power line, electric cable, wire, utility pole, lamp post]
-      score_threshold: 0.4
-      dilate_px: 25
+      prompts: [car, truck, bus, motorcycle, person, tree, utility pole, lamp post, power line]
+      score_threshold: 0.5
 
 colmap:
   camera_model: OPENCV
   feature_extractor:
-    max_image_size: 3200        # 36 MP: aprovechar más detalle que con el video
-    max_num_features: 12000
+    max_image_size: 3200
+    max_num_features: 16384
+    extra_args:
+      SiftExtraction.estimate_affine_shape: 1
+      SiftExtraction.domain_size_pooling: 1
+      SiftExtraction.num_threads: 8
   matcher:
-    methods: [exhaustive]       # 77 fotos = ~2900 pares: barato y lo más robusto en órbita
+    methods: [exhaustive]         # 77 fotos = ~2900 pares
+    extra_args:
+      SiftMatching.guided_matching: 1
+  mapper:
+    extra_args:
+      Mapper.abs_pose_min_num_inliers: 20
+      Mapper.min_num_matches: 10
   undistort:
     max_image_size: 3200
 
@@ -46,4 +56,4 @@ openmvs:
     extra_args:
       remove-spurious: 40
   refine:
-    scales: 2                   # refinado completo: 77 vistas caben en 130 GB
+    scales: 2
