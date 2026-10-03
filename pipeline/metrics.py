@@ -139,6 +139,7 @@ def run_metrics(ctx: Context, timings: dict[str, float],
             info = json.loads(masks_info_file.read_text(encoding="utf-8"))
             metrics["masking"] = {
                 "backends": info.get("backends") or info.get("backend"),
+                "backends_per_source": info.get("backends_per_source"),
                 "classes": info.get("classes"),
                 "mean_masked_ratio": {
                     source: data.get("mean_masked_ratio")

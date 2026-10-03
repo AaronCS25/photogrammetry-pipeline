@@ -27,6 +27,19 @@ from .executor import CommandError
 from . import mask_backends
 
 
+def source_masking_cfg(masking_cfg: dict, source: str) -> dict:
+    """Config de máscaras de UNA fuente: la global con el override de
+    `masking.per_source.<fuente>` aplicado por merge profundo. Permite una
+    cadena de backends distinta por fuente (p. ej. SegFormer-Cityscapes
+    funciona a nivel de calle pero alucina sobre fachadas en vista aérea)."""
+    override = (masking_cfg.get("per_source") or {}).get(source)
+    if not override:
+        return masking_cfg
+    from .config import deep_merge
+    base = {k: v for k, v in masking_cfg.items() if k != "per_source"}
+    return deep_merge(base, override)
+
+
 def colmap_mask_path(image: Path) -> str:
     """COLMAP: <masks>/<fuente>/<imagen completa>.png (espeja la estructura)."""
     return image.name + ".png"
@@ -181,29 +194,39 @@ def run_masks(ctx: Context) -> None:
     if not sources:
         raise CommandError(f"No hay frames en {ctx.frames_dir}: ejecutar antes la etapa 'frames'.")
 
-    names = backend_names(mcfg)
-    backends = [(n, mask_backends.get_backend(n)) for n in names]  # desconocido = error
+    # Plan por fuente: cada una puede tener su propia cadena y configuración
+    # (masking.per_source.<fuente>). Backend desconocido = error siempre.
+    plan: dict[str, tuple[dict, list]] = {}
+    for source in sources:
+        scfg = source_masking_cfg(mcfg, source)
+        backends = [(n, mask_backends.get_backend(n)) for n in backend_names(scfg)]
+        # Validaciones que no requieren dependencias pesadas
+        for name, backend in backends:
+            if hasattr(backend, "resolve_class_ids"):
+                backend.resolve_class_ids(effective_classes(scfg, name))
+        plan[source] = (scfg, backends)
+    chains = {source: [n for n, _ in backends] for source, (_, backends) in plan.items()}
 
-    # Validaciones que no requieren dependencias pesadas
-    for name, backend in backends:
-        if hasattr(backend, "resolve_class_ids"):
-            backend.resolve_class_ids(effective_classes(mcfg, name))
-
-    missing = [n for n, b in backends if not b.is_available()]
+    missing = sorted({n for _, backends in plan.values() for n, b in backends
+                      if not b.is_available()})
     if missing:
         if masks_complete(ctx):
-            # Reutilizar solo si se generaron con la MISMA cadena de backends
+            # Reutilizar solo si se generaron con las MISMAS cadenas de backends
             info_file = ctx.metrics_dir / "masks_info.json"
             previous = None
             if info_file.is_file():
                 try:
-                    previous = json.loads(info_file.read_text(encoding="utf-8")).get("backends")
+                    old = json.loads(info_file.read_text(encoding="utf-8"))
+                    previous = old.get("backends_per_source")
+                    if previous is None and old.get("backends") is not None:
+                        # masks_info antiguo: una sola cadena global
+                        previous = {s: list(old["backends"]) for s in chains}
                 except json.JSONDecodeError:
                     previous = None
-            if previous is not None and list(previous) != names:
+            if previous is not None and previous != chains:
                 raise CommandError(
                     f"Las máscaras existentes se generaron con backends {previous} pero la "
-                    f"configuración pide {names}. Regenerarlas en el contenedor de segmentación:\n"
+                    f"configuración pide {chains}. Regenerarlas en el contenedor de segmentación:\n"
                     "  apptainer exec --nv containers/segmentation.sif \\\n"
                     f"      python3 -m pipeline run --config <cfg> --scene {ctx.scene} "
                     "--stages masks --force"
@@ -224,29 +247,26 @@ def run_masks(ctx: Context) -> None:
 
     # Procedencia: la configuración EFECTIVA de cada backend (globales +
     # overrides de su bloque), para que las métricas describan lo que se hizo.
+    all_names: list[str] = []
+    for chain in chains.values():
+        all_names += [n for n in chain if n not in all_names]
     info: dict = {
-        "backends": names,
+        "backends": all_names,                 # unión, en orden de aparición
+        "backends_per_source": chains,
         "classes": mcfg.get("classes"),
         "dilate_px": mcfg.get("dilate_px"),
-        "per_backend_config": {
-            name: {
-                "classes": effective_classes(mcfg, name) if backend.SUPPORTED_CLASSES else None,
-                "dilate_px": effective_dilate(mcfg, name),
-                **{k: v for k, v in _backend_cfg(mcfg, name).items()
-                   if k not in ("classes", "dilate_px")},
-            }
-            for name, backend in backends
-        },
         "sources": {},
     }
     for source, images in sources.items():
+        scfg, backends = plan[source]
         mask_dir = ctx.masks_dir / source
         mask_dir.mkdir(parents=True, exist_ok=True)
         per_backend: dict[str, float] = {}
+        print(f"[masks] {source}: cadena de backends {chains[source]}")
 
         if len(backends) == 1:
             name, backend = backends[0]
-            results = backend.generate(images, mask_dir, mcfg, ctx)
+            results = backend.generate(images, mask_dir, scfg, ctx)
             ratios = [r["masked_ratio"] for r in results]
             per_backend[name] = round(sum(ratios) / len(ratios), 4) if ratios else 0.0
         else:
@@ -254,7 +274,7 @@ def run_masks(ctx: Context) -> None:
             for name, backend in backends:
                 pdir = mask_dir / f".{name}"
                 pdir.mkdir(exist_ok=True)
-                results = backend.generate(images, pdir, mcfg, ctx)
+                results = backend.generate(images, pdir, scfg, ctx)
                 r = [x["masked_ratio"] for x in results]
                 per_backend[name] = round(sum(r) / len(r), 4) if r else 0.0
                 partial_dirs.append(pdir)
@@ -265,6 +285,17 @@ def run_masks(ctx: Context) -> None:
         heavily_masked = [img.name for img, r in zip(images, ratios) if r > 0.8]
         info["sources"][source] = {
             "images": len(images),
+            "backends": chains[source],
+            # Procedencia: configuración EFECTIVA de cada backend en esta fuente
+            "config": {
+                name: {
+                    "classes": effective_classes(scfg, name) if backend.SUPPORTED_CLASSES else None,
+                    "dilate_px": effective_dilate(scfg, name),
+                    **{k: v for k, v in _backend_cfg(scfg, name).items()
+                       if k not in ("classes", "dilate_px")},
+                }
+                for name, backend in backends
+            },
             "mean_masked_ratio": mean_ratio,
             "mean_masked_ratio_per_backend": per_backend,
             "heavily_masked": heavily_masked,

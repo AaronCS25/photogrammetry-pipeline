@@ -169,18 +169,29 @@ def cmd_validate(args: argparse.Namespace) -> int:
     if mcfg.get("enabled"):
         from . import mask_backends
         from .masks import backend_names, effective_classes
-        names = backend_names(mcfg)
-        backends = [(n, mask_backends.get_backend(n)) for n in names]
-        print(f"\nEnmascaramiento: backends={names} dilate={mcfg.get('dilate_px')}px "
+        from .masks import source_masking_cfg
+        names: list[str] = []
+        backends = []
+        print(f"\nEnmascaramiento: dilate={mcfg.get('dilate_px')}px "
               f"dense={'sí' if mcfg.get('apply_to_dense') else 'no'}")
-        for name, backend in backends:
-            if hasattr(backend, "resolve_class_ids"):
-                classes = effective_classes(mcfg, name)
-                backend.resolve_class_ids(classes)
-                print(f"  {name}: clases={classes}")
-        if "sam3" in names:
-            sam_cfg = (mcfg.get("backends") or {}).get("sam3") or {}
-            print(f"  sam3 prompts={sam_cfg.get('prompts')} umbral={sam_cfg.get('score_threshold')}")
+        # Cada fuente puede tener su propia cadena (masking.per_source.<fuente>)
+        for source in sources:
+            scfg = source_masking_cfg(mcfg, source)
+            chain = backend_names(scfg)
+            print(f"  [{source}] backends={chain}")
+            for name in chain:
+                backend = mask_backends.get_backend(name)
+                if name not in names:
+                    names.append(name)
+                    backends.append((name, backend))
+                if hasattr(backend, "resolve_class_ids"):
+                    classes = effective_classes(scfg, name)
+                    backend.resolve_class_ids(classes)
+                    print(f"      {name}: clases={classes}")
+                if name == "sam3":
+                    sam_cfg = (scfg.get("backends") or {}).get("sam3") or {}
+                    print(f"      sam3: prompts={sam_cfg.get('prompts')} "
+                          f"umbral={sam_cfg.get('score_threshold')}")
         if "manual" in names:
             from .mask_backends import manual as manual_mod
             base = manual_mod.override_dir(mcfg, ctx)

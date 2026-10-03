@@ -94,6 +94,16 @@ masking:
   # píxeles de un objeto enmascarado (ya sin geometría) se proyectan sobre lo
   # que había detrás ("calcomanías" de autos en el suelo).
   # apply_to_texture: true
+  # Override POR FUENTE (merge profundo sobre este bloque): cada subcarpeta de
+  # la escena puede usar otra cadena u otra configuración. Caso típico:
+  # SegFormer-Cityscapes funciona a nivel de calle pero ALUCINA sobre fachadas
+  # en vista aérea oblicua -> el dron usa solo SAM 3 con prompts de objetos.
+  # per_source:
+  #   drone:
+  #     backend: [sam3]
+  #     backends:
+  #       sam3: {prompts: [car, person, tree, power line, utility pole]}
+  per_source: {}
   # Configuración por backend. `classes` y `dilate_px` globales son el default;
   # cada bloque puede sobreescribirlos (p. ej. más dilatación para cables finos).
   backends:
