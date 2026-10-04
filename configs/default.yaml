@@ -153,6 +153,31 @@ colmap:
     max_image_size: -1           # -1 = sin límite
 
 # -----------------------------------------------------------------------------
+# Etapa 4b: georreferenciación (opcional, OFF por defecto)
+#
+# Sin ella el modelo vive en el marco arbitrario de COLMAP (orientación, escala
+# y origen sin significado). Con ella: metros reales, eje Z hacia arriba y
+# origen en el centro de la escena; opcionalmente una región de interés (ROI)
+# para reconstruir solo el objetivo y no los edificios vecinos.
+# -----------------------------------------------------------------------------
+georef:
+  enabled: false
+  alignment_type: enu        # enu: GPS del EXIF -> metros, Z arriba | plane: sin GPS, solo endereza
+  max_error_m: 3.0           # error máximo (m) del ajuste robusto contra el GPS
+  min_common_images: 3
+  fallback_plane: true       # sin GPS suficiente: enderezar por plano principal (NO métrico)
+  center: true               # origen en el centro de la escena (y z=0 ~ suelo)
+  center_source: null        # fuente cuyas cámaras definen el centro (ej. drone); null = todas
+  ground_below_min_camera_m: 2.0   # el suelo se estima esta distancia bajo la cámara más baja
+  roi:                       # recorte: requiere alignment_type enu y center: true
+    enabled: false
+    radius_m: null           # semilado de la caja en XY; null = distancia horizontal
+                             #   mediana cámara->centro (la órbita rodea el objetivo)
+    radius_factor: 1.0       # multiplicador del radio automático (0.8 = más ajustado)
+    below_m: 3.0             # cuánto incluir por debajo del suelo estimado
+    height_m: null           # altura de la caja; null = hasta la cámara más alta
+
+# -----------------------------------------------------------------------------
 # Etapa 5: reconstrucción densa
 # -----------------------------------------------------------------------------
 dense:

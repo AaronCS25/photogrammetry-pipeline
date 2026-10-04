@@ -113,6 +113,28 @@ colmap:
       SiftExtraction.domain_size_pooling: 1
 ```
 
+## `georef` — georreferenciación y región de interés (opcional, OFF por defecto)
+
+Etapa entre `sfm` y `undistort`. Sin ella el modelo queda en el marco
+arbitrario de COLMAP; con ella, en **metros reales, eje Z hacia arriba y origen
+en el centro de la escena**, y opcionalmente recortado a una región de interés.
+
+| Clave | Default | Descripción |
+|---|---|---|
+| `enabled` | `false` | Con `false` el pipeline es idéntico al flujo sin georef. |
+| `alignment_type` | `enu` | `enu`: `colmap model_aligner` con el GPS del EXIF (leído de la base de datos) → marco métrico. `plane`: sin GPS, endereza con el plano principal (no métrico). |
+| `max_error_m` | `3.0` | Error máximo del ajuste robusto contra el GPS (el GPS de consumo tiene 2–5 m). |
+| `fallback_plane` | `true` | Si no hay GPS suficiente, usar `plane` con aviso en vez de fallar. |
+| `center` / `center_source` | `true` / `null` | Traslada el origen al centro de la escena (mediana XY de las cámaras; `center_source: drone` usa solo esa fuente — recomendable si el teléfono solo cubre un lado). `z = 0` queda cerca del suelo. |
+| `roi.enabled` | `false` | Calcula una caja alrededor del centro y se la pasa a OpenMVS: solo se densifica y malla dentro. Requiere `enu` + `center`. |
+| `roi.radius_m` | `null` | Semilado de la caja. `null` = distancia horizontal mediana cámara→centro × `radius_factor`. El valor usado queda en `metrics/georef_info.json` para ajustarlo. |
+| `roi.below_m` / `roi.height_m` | `3.0` / `null` | Límites verticales (por defecto hasta la cámara más alta). |
+
+En escenas mixtas basta con que **una** fuente tenga GPS (p. ej. el dron):
+alinea todo el modelo, incluidas las fotos sin EXIF. Para iterar la ROI sin
+repetir el sparse: `--from-stage georef --force` (borrando antes `mvs/` y
+`colmap/undistorted/`, porque los depth-maps previos están en otro marco).
+
 ## `dense`
 
 | Clave | Default | Descripción |

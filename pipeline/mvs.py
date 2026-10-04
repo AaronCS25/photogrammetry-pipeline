@@ -15,6 +15,7 @@ from .executor import CommandError, extra_args_to_cli, run_cmd
 from .sfm import undistorted_dir
 
 SCENE = "scene.mvs"
+SCENE_ROI = "scene_roi.mvs"          # scene.mvs + región de interés (etapa georef)
 SCENE_DENSE = "scene_dense.mvs"
 SCENE_MESH = "scene_mesh.mvs"
 SCENE_MESH_REFINED = "scene_mesh_refined.mvs"
@@ -68,12 +69,28 @@ def run_densify(ctx: Context) -> None:
         "-o", SCENE,
     ], "dense.log")
 
+    # 1b) Región de interés (etapa georef): se incrusta en la escena antes de
+    # densificar. Con ROI importada, OpenMVS no estima la suya y recorta a ella
+    # (crop-to-roi es su default): fuera quedan los edificios vecinos.
+    from .georef import roi_active, roi_file
+    input_scene = SCENE
+    if roi_active(ctx):
+        _run(ctx, [
+            "DensifyPointCloud",
+            "-w", ctx.mvs_dir,
+            SCENE,
+            "--import-roi-file", roi_file(ctx),
+            "-o", SCENE_ROI,
+        ], "dense.log")
+        input_scene = _require(ctx, SCENE_ROI, "dense").name
+        print("[dense] región de interés activa: solo se densifica dentro de la ROI")
+
     # 2) Nube de puntos densa
     dcfg = ctx.cfg["openmvs"]["densify"]
     cmd = [
         "DensifyPointCloud",
         "-w", ctx.mvs_dir,
-        SCENE,
+        input_scene,
         "-o", SCENE_DENSE,
         "--resolution-level", str(dcfg.get("resolution_level", 1)),
         "--number-views", str(dcfg.get("number_views", 0)),
@@ -107,6 +124,9 @@ def run_mesh(ctx: Context) -> None:
         "-o", SCENE_MESH,
         "--decimate", str(mcfg.get("decimate", 1.0)),
     ]
+    from .georef import roi_active
+    if roi_active(ctx):
+        cmd += ["--integrate-only-roi", "1"]   # mallar solo con puntos dentro de la ROI
     cmd += extra_args_to_cli(mcfg.get("extra_args"))
     _run(ctx, cmd, "mesh.log")
     _require(ctx, MESH_PLY, "mesh")

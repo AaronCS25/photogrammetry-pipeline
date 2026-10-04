@@ -157,6 +157,12 @@ def run_sfm(ctx: Context) -> None:
     _select_best_model(ctx)
 
 
+def _active_model(ctx: Context) -> Path:
+    # Import perezoso: georef importa de este módulo
+    from .georef import active_model_dir
+    return active_model_dir(ctx)
+
+
 def run_undistort(ctx: Context) -> None:
     cfg = ctx.cfg["colmap"].get("undistort", {})
     out = undistorted_dir(ctx)
@@ -165,7 +171,7 @@ def run_undistort(ctx: Context) -> None:
     cmd = [
         "colmap", "image_undistorter",
         "--image_path", ctx.frames_dir,
-        "--input_path", best_model_dir(ctx),
+        "--input_path", _active_model(ctx),
         "--output_path", out,
         "--output_type", "COLMAP",
         "--max_image_size", str(cfg.get("max_image_size", -1)),

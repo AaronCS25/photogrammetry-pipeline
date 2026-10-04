@@ -1,0 +1,76 @@
+# Manzana El Hornero — solo dron, GEORREFERENCIADO y recortado a la manzana.
+# Igual que hornero_drone (77/77 registradas) más la etapa georef:
+#   - modelo en metros reales, Z arriba, origen en el centro de la órbita
+#     (abre derecho y a escala en Blender)
+#   - ROI: caja alrededor del centro -> fuera quedan los edificios vecinos
+#   - relleno gris (no naranja) en las caras sin vista (donde había autos)
+#
+# Reutilizar el sparse de hornero_drone_v1 (evita repetir máscaras y sfm):
+#   cp -r outputs/hornero_drone/hornero_drone_v1 outputs/hornero_drone/hornero_drone_v2_geo
+#   rm -rf outputs/hornero_drone/hornero_drone_v2_geo/{mvs,colmap/undistorted}
+#   ./slurm/submit.sh configs/experiments/hornero_drone_geo.yaml hornero_drone --from-stage georef --force
+# (borrar mvs/ es obligatorio: los depth-maps viejos están en el marco anterior)
+
+experiment:
+  name: hornero_drone_v2_geo
+  notes: "Hornero solo dron + georef ENU (GPS) + ROI (radio auto x0.85) + empty-color gris. Sparse reutilizado de hornero_drone_v1."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [sam3]
+  dilate_px: 15
+  apply_to_dense: true
+  apply_to_texture: true
+  backends:
+    sam3:
+      prompts: [car, truck, bus, motorcycle, person, tree, utility pole, lamp post, power line]
+      score_threshold: 0.5
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 3200
+    max_num_features: 16384
+    extra_args:
+      SiftExtraction.estimate_affine_shape: 1
+      SiftExtraction.domain_size_pooling: 1
+      SiftExtraction.num_threads: 8
+  matcher:
+    methods: [exhaustive]
+    extra_args:
+      SiftMatching.guided_matching: 1
+  mapper:
+    extra_args:
+      Mapper.abs_pose_min_num_inliers: 20
+      Mapper.min_num_matches: 10
+  undistort:
+    max_image_size: 3200
+
+georef:
+  enabled: true
+  alignment_type: enu
+  max_error_m: 3.0
+  roi:
+    enabled: true
+    radius_m: null            # automático: distancia mediana cámara->centro...
+    radius_factor: 0.85       # ...algo más ajustado (la órbita vuela sobre las calles)
+    below_m: 3.0
+    height_m: null
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 2
+  texture:
+    extra_args:
+      empty-color: 8421504    # gris 0x808080 en vez del naranja por defecto

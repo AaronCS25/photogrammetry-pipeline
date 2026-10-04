@@ -42,7 +42,8 @@ def parse_ply_counts(ply_path: Path) -> dict:
 def run_model_analyzer(ctx: Context) -> dict:
     """Ejecuta colmap model_analyzer sobre el modelo sparse elegido y parsea su salida."""
     try:
-        model = best_model_dir(ctx)
+        from .georef import active_model_dir
+        model = active_model_dir(ctx)
     except Exception:
         return {}
     out_file = ctx.metrics_dir / "colmap_model_analyzer.txt"
@@ -129,6 +130,14 @@ def run_metrics(ctx: Context, timings: dict[str, float],
         try:
             metrics["sfm_breakdown_seconds"] = json.loads(
                 sfm_timings_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    # Georreferenciación (si la etapa georef dejó su reporte)
+    georef_file = ctx.metrics_dir / "georef_info.json"
+    if (ctx.cfg.get("georef") or {}).get("enabled") and georef_file.is_file():
+        try:
+            metrics["georef"] = json.loads(georef_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             pass
 

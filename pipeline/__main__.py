@@ -17,12 +17,14 @@ from . import frames as frames_mod
 from . import telemetry as telemetry_mod
 from . import masks as masks_mod
 from . import sfm as sfm_mod
+from . import georef as georef_mod
 from . import mvs as mvs_mod
 from .metrics import run_metrics
 from .report import run_report
 
 # Orden canónico de etapas
-STAGE_ORDER = ["frames", "telemetry", "masks", "sfm", "undistort", "dense", "mesh", "texture", "metrics"]
+STAGE_ORDER = ["frames", "telemetry", "masks", "sfm", "georef", "undistort",
+               "dense", "mesh", "texture", "metrics"]
 
 # Etapas que puede ejecutar el contenedor de segmentación (subcomando pre-masks)
 PRE_MASK_STAGES = ["frames", "telemetry", "masks"]
@@ -46,6 +48,7 @@ def _stage_functions(ctx: Context) -> dict:
         "telemetry": lambda: telemetry_mod.run_telemetry(ctx),
         "masks": lambda: masks_mod.run_masks(ctx),
         "sfm": lambda: sfm_mod.run_sfm(ctx),
+        "georef": lambda: georef_mod.run_georef(ctx),
         "undistort": lambda: sfm_mod.run_undistort(ctx),
         "dense": dense_fn,
         "mesh": mesh_fn,
@@ -83,6 +86,8 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
         stages.remove("telemetry")
     if not (ctx.cfg.get("masking") or {}).get("enabled") and "masks" in stages:
         stages.remove("masks")
+    if not (ctx.cfg.get("georef") or {}).get("enabled") and "georef" in stages:
+        stages.remove("georef")
 
     print(f"[pipeline] escena='{ctx.scene}' experimento='{ctx.experiment}'")
     print(f"[pipeline] etapas a ejecutar: {stages}")
@@ -218,6 +223,21 @@ def cmd_validate(args: argparse.Namespace) -> int:
         if unavailable:
             print(f"  (backends {unavailable} no disponibles en ESTE entorno: las máscaras "
                   "se generan en el contenedor de segmentación — comportamiento esperado)")
+
+    gcfg = cfg.get("georef") or {}
+    if gcfg.get("enabled"):
+        roi_cfg = gcfg.get("roi") or {}
+        roi_txt = "no"
+        if roi_cfg.get("enabled"):
+            radius = roi_cfg.get("radius_m")
+            roi_txt = (f"radio {radius} m" if radius is not None
+                       else f"radio automático x{roi_cfg.get('radius_factor', 1.0)}")
+        print(f"\nGeorreferenciación: {gcfg.get('alignment_type')} "
+              f"(fallback plano: {'sí' if gcfg.get('fallback_plane', True) else 'no'}) | "
+              f"centro: {gcfg.get('center_source') or 'todas las cámaras'} | ROI: {roi_txt}")
+        if str(gcfg.get("alignment_type", "enu")).lower() == "enu":
+            print("  (requiere GPS en el EXIF de al menos "
+                  f"{gcfg.get('min_common_images', 3)} imágenes registradas)")
 
     print("\nBinarios en PATH:")
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):
