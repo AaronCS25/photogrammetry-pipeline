@@ -61,6 +61,51 @@ def roi_active(ctx: Context) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Referencias GPS
+# ---------------------------------------------------------------------------
+
+def read_gps_priors(db_path: Path) -> tuple[list[tuple[str, float, float, float]], int]:
+    """(nombre, lat, lon, alt) por imagen desde la base de datos de COLMAP
+    (tabla pose_priors: posición = 3 doubles), descartando GPS inválido.
+
+    Importa filtrar aquí en vez de pasarle la BD a model_aligner: COLMAP toma la
+    PRIMERA referencia como origen del marco ENU, y los drones DJI escriben
+    (0.0, 0.0) en las fotos tomadas antes de fijar satélites — con una de esas
+    como origen, el "arriba" del modelo queda el del Golfo de Guinea.
+    Devuelve (válidas, nº de inválidas).
+    """
+    import math
+    import sqlite3
+    import struct
+
+    con = sqlite3.connect(str(db_path))
+    try:
+        rows = con.execute(
+            "SELECT i.name, p.position FROM pose_priors p "
+            "JOIN images i ON i.image_id = p.image_id ORDER BY i.image_id"
+        ).fetchall()
+    except sqlite3.Error:
+        rows = []
+    finally:
+        con.close()
+
+    valid: list[tuple[str, float, float, float]] = []
+    invalid = 0
+    for name, blob in rows:
+        if not blob or len(blob) < 24:
+            invalid += 1
+            continue
+        lat, lon, alt = struct.unpack("<3d", blob[:24])
+        if (not all(math.isfinite(v) for v in (lat, lon, alt))
+                or (abs(lat) < 1e-6 and abs(lon) < 1e-6)
+                or abs(lat) > 90 or abs(lon) > 180):
+            invalid += 1
+            continue
+        valid.append((name, lat, lon, alt))
+    return valid, invalid
+
+
+# ---------------------------------------------------------------------------
 # Geometría (sin dependencias: testeable sin COLMAP)
 # ---------------------------------------------------------------------------
 
@@ -120,11 +165,17 @@ def compute_roi(centers: dict[str, tuple], center: tuple[float, float, float],
     z_min = -float(roi_cfg.get("below_m", 3.0))
     height = roi_cfg.get("height_m")
     z_max = float(height) if height is not None else max(p[2] for p in centers.values()) - z_ground
+    def pct(p: float) -> float:
+        return round(dists[min(len(dists) - 1, int(p * len(dists)))], 1) if dists else 0.0
+
     return {
         "center": [0.0, 0.0, (z_min + z_max) / 2],
         "half_extent": [radius, radius, (z_max - z_min) / 2],
         "radius_m": round(radius, 2),
         "z_range_m": [round(z_min, 2), round(z_max, 2)],
+        # Para elegir radius_m a mano: distancia horizontal cámara->centro.
+        # OJO: en vuelos oblicuos SOBRE el objetivo la mediana subestima su tamaño.
+        "camera_distance_m": {"median": pct(0.5), "p90": pct(0.9), "max": pct(1.0)},
     }
 
 
@@ -175,12 +226,31 @@ def run_georef(ctx: Context) -> None:
     alignment = str(gcfg.get("alignment_type", "enu")).lower()
     metric = alignment == "enu"
 
+    gps_info: dict = {}
+
     def align(kind: str) -> None:
         cmd = ["colmap", "model_aligner", "--input_path", source_model,
                "--output_path", aligned, "--alignment_type", kind]
         if kind == "enu":
-            cmd += ["--database_path", database_path(ctx), "--ref_is_gps", "1",
-                    "--min_common_images", str(gcfg.get("min_common_images", 3)),
+            min_common = int(gcfg.get("min_common_images", 3))
+            refs, invalid = read_gps_priors(database_path(ctx))
+            print(f"[georef] GPS en la base de datos: {len(refs)} válidos, {invalid} "
+                  "descartados (sin fijar satélites: lat=lon=0)")
+            if len(refs) < min_common:
+                raise CommandError(f"solo {len(refs)} imágenes con GPS válido "
+                                   f"(se necesitan {min_common})")
+            # Lista propia de referencias: la primera (válida) será el origen ENU
+            refs_file = ctx.colmap_dir / "georef_gps_refs.txt"
+            refs_file.write_text(
+                "".join(f"{n} {lat:.10f} {lon:.10f} {alt:.4f}\n" for n, lat, lon, alt in refs),
+                encoding="utf-8")
+            gps_info.update({
+                "gps_valid": len(refs), "gps_discarded": invalid,
+                "enu_origin_gps": {"image": refs[0][0], "lat": refs[0][1],
+                                   "lon": refs[0][2], "alt": refs[0][3]},
+            })
+            cmd += ["--ref_images_path", refs_file, "--ref_is_gps", "1",
+                    "--min_common_images", str(min_common),
                     "--alignment_max_error", str(gcfg.get("max_error_m", 3.0))]
         run_cmd(cmd, log)
         if not (aligned / "images.bin").is_file():
@@ -218,9 +288,11 @@ def run_georef(ctx: Context) -> None:
         "metric": metric,
         "cameras": len(centers),
         "center_source": source,
-        # Traslación aplicada sobre el marco ENU de model_aligner (cuyo origen es
-        # la primera imagen con GPS de la base de datos, altitud absoluta):
+        # Traslación aplicada sobre el marco ENU de model_aligner, cuyo origen es
+        # enu_origin_gps (primera imagen con GPS válido). Con ambos datos una
+        # reconstrucción se puede ubicar junto a otras (tiles).
         "enu_offset_m": [round(v, 3) for v in center],
+        **(gps_info if metric else {}),
     }
 
     # 3) ROI (solo tiene sentido en un marco métrico y centrado)
@@ -233,7 +305,11 @@ def run_georef(ctx: Context) -> None:
             write_roi_file(roi_file(ctx), roi)
             info["roi"] = roi
             print(f"[georef] ROI: radio {roi['radius_m']} m, z {roi['z_range_m']} m "
-                  f"-> {roi_file(ctx).name}")
+                  f"-> {roi_file(ctx).name} | distancia cámara->centro: "
+                  f"{roi['camera_distance_m']} m")
+            if roi_cfg.get("radius_m") is None:
+                print("[georef] AVISO: radio automático. Si las fotos se tomaron SOBRE el "
+                      "objetivo (no en órbita alrededor), fijar roi.radius_m a mano.")
 
     ctx.metrics_dir.mkdir(parents=True, exist_ok=True)
     with open(ctx.metrics_dir / "georef_info.json", "w", encoding="utf-8") as fh:

@@ -185,4 +185,29 @@ def run_texture(ctx: Context) -> None:
         print(f"[texture] enmascaramiento activo en el texturizado ({linked} máscaras enlazadas)")
     cmd += _cuda_args(ctx)
     cmd += extra_args_to_cli(tcfg.get("extra_args"))
-    _run(ctx, cmd, "texture.log")
+
+    # OpenMVS 2.3.0 se cae (segfault al guardar) cuando la textura cabe en UN
+    # solo atlas: observado en todas las mallas pequeñas, nunca con >= 2 atlas.
+    # Reintentos: forzar varios atlas más chicos y, en último caso, otro formato.
+    user_args = tcfg.get("extra_args") or {}
+    attempts: list[tuple[str, list[str]]] = [("configuración original", cmd)]
+    if "max-texture-size" not in user_args:
+        for size in (4096, 2048):
+            attempts.append((f"max-texture-size {size}",
+                             cmd + ["--max-texture-size", str(size)]))
+    if str(tcfg.get("export_type", "obj")) != "ply":
+        ply_cmd = list(cmd)
+        ply_cmd[ply_cmd.index("--export-type") + 1] = "ply"
+        attempts.append(("export-type ply", ply_cmd))
+
+    for i, (label, attempt) in enumerate(attempts):
+        try:
+            _run(ctx, attempt, "texture.log")
+            if i > 0:
+                print(f"[texture] completado con el reintento '{label}'")
+            return
+        except CommandError as exc:
+            if i == len(attempts) - 1:
+                raise
+            print(f"[texture] AVISO: TextureMesh falló con '{label}' "
+                  f"({str(exc).splitlines()[0]}); reintentando con '{attempts[i + 1][0]}'")

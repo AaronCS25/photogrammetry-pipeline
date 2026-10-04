@@ -58,10 +58,12 @@ georef:
   max_error_m: 3.0
   roi:
     enabled: true
-    radius_m: null            # automático: distancia mediana cámara->centro...
-    radius_factor: 0.85       # ...algo más ajustado (la órbita vuela sobre las calles)
+    # Radio EXPLÍCITO: el automático (distancia mediana cámara->centro) dio
+    # 14.8 m porque las fotos son oblicuas tomadas SOBRE la manzana, no en
+    # órbita alrededor -> recortaba medio edificio.
+    radius_m: 32              # semilado de la caja: manzana ~45-50 m + veredas
     below_m: 3.0
-    height_m: null
+    height_m: 25              # edificios de 2-3 pisos: 25 m sobran
 
 openmvs:
   densify:
