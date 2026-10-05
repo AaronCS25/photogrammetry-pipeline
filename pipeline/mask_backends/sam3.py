@@ -10,6 +10,9 @@ Config (masking.backends.sam3):
   prompts: ["power line", "electric cable", "wire", "utility pole"]
   score_threshold: 0.5      # confianza mínima de cada instancia detectada
   checkpoint: null          # ruta local a los pesos; null = caché de HF
+  tiles: null               # [columnas, filas]: pasada extra por teselas (objetos finos)
+  tile_overlap: 0.15        # solape entre teselas (fracción de su tamaño)
+  tile_prompts: null        # prompts de la pasada por teselas; null = los mismos
 
 API verificada contra el código de sam3 @ 660a5e9e (commit fijado en
 containers/segmentation.def): build_sam3_image_model(checkpoint_path=...),
@@ -64,6 +67,47 @@ def _to_bool_mask(mask, height: int, width: int):
     return mask
 
 
+def parse_tiles(value) -> tuple[int, int] | None:
+    """`tiles: [columnas, filas]` (o un entero N = NxN). None/1 = sin mosaico."""
+    if value in (None, False, 0, 1):
+        return None
+    cols, rows = (value, value) if isinstance(value, int) else (value[0], value[1])
+    cols, rows = int(cols), int(rows)
+    if cols < 1 or rows < 1:
+        raise CommandError(f"masking.backends.sam3.tiles inválido: {value}")
+    return None if (cols, rows) == (1, 1) else (cols, rows)
+
+
+def tile_boxes(width: int, height: int, cols: int, rows: int,
+               overlap: float = 0.15) -> list[tuple[int, int, int, int]]:
+    """Cajas (x0, y0, x1, y1) de un mosaico cols x rows que cubre toda la imagen;
+    cada tesela se extiende `overlap` (fracción de su tamaño) hacia sus vecinas
+    para que un objeto en la frontera aparezca entero en alguna."""
+    boxes = []
+    tw, th = width / cols, height / rows
+    mx, my = int(tw * overlap), int(th * overlap)
+    for r in range(rows):
+        for c in range(cols):
+            boxes.append((max(0, int(c * tw) - mx), max(0, int(r * th) - my),
+                          min(width, int((c + 1) * tw) + mx), min(height, int((r + 1) * th) + my)))
+    return boxes
+
+
+def _detect(processor, img, prompts: list[str], threshold: float):
+    """Unión (bool H x W) de las instancias de todos los prompts sobre una imagen PIL."""
+    import numpy as np
+
+    width, height = img.size
+    state = processor.set_image(img)
+    masked = np.zeros((height, width), dtype=bool)
+    for prompt in prompts:
+        output = processor.set_text_prompt(state=state, prompt=prompt)
+        for mask, score in zip(output["masks"], output["scores"]):
+            if float(score) >= threshold:
+                masked |= _to_bool_mask(mask, height, width)
+    return masked
+
+
 def generate(images: list[Path], out_dir: Path, masking_cfg: dict, ctx) -> list[dict]:
     import torch
 
@@ -102,8 +146,21 @@ def _generate(images: list[Path], out_dir: Path, masking_cfg: dict) -> list[dict
     threshold = float(bcfg.get("score_threshold", 0.5))
     checkpoint = bcfg.get("checkpoint")
     dilate_px = int(bcfg.get("dilate_px", masking_cfg.get("dilate_px", 15)))
+    # Mosaico (opcional): SAM 3 trabaja a ~1008 px de lado; en una foto de 8000 px
+    # un cable de 4 px queda en medio píxel y no se detecta. Con `tiles` se
+    # repite la inferencia por teselas (a más resolución efectiva) y se SUMA a
+    # la pasada sobre la imagen completa.
+    tiles = parse_tiles(bcfg.get("tiles"))
+    tile_overlap = float(bcfg.get("tile_overlap", 0.15))
+    tile_prompts = bcfg.get("tile_prompts") or prompts
+    if isinstance(tile_prompts, str):
+        tile_prompts = [tile_prompts]
+    tile_prompts = [str(p) for p in tile_prompts]
 
     print(f"[masks] backend sam3: prompts={prompts} umbral={threshold} dilate={dilate_px}px")
+    if tiles:
+        print(f"[masks] sam3 mosaico {tiles[0]}x{tiles[1]} (solape {tile_overlap}): "
+              f"prompts por tesela={tile_prompts}")
     try:
         model = build_sam3_image_model(checkpoint_path=checkpoint) if checkpoint \
             else build_sam3_image_model()
@@ -121,14 +178,11 @@ def _generate(images: list[Path], out_dir: Path, masking_cfg: dict) -> list[dict
         with Image.open(img_path) as img:
             img = img.convert("RGB")
             width, height = img.size
-            state = processor.set_image(img)
-            masked = np.zeros((height, width), dtype=bool)
-            for prompt in prompts:
-                output = processor.set_text_prompt(state=state, prompt=prompt)
-                masks, scores = output["masks"], output["scores"]
-                for mask, score in zip(masks, scores):
-                    if float(score) >= threshold:
-                        masked |= _to_bool_mask(mask, height, width)
+            masked = _detect(processor, img, prompts, threshold)
+            if tiles:
+                for x0, y0, x1, y1 in tile_boxes(width, height, tiles[0], tiles[1], tile_overlap):
+                    masked[y0:y1, x0:x1] |= _detect(
+                        processor, img.crop((x0, y0, x1, y1)), tile_prompts, threshold)
 
         masked = _dilate(masked, dilate_px)
         keep = np.where(masked, 0, 255).astype(np.uint8)

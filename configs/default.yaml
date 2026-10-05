@@ -116,6 +116,13 @@ masking:
       prompts: [power line, electric cable, wire, utility pole]   # sustantivos simples
       score_threshold: 0.5    # confianza mínima por instancia detectada
       checkpoint: null        # ruta local a pesos; null = caché de Hugging Face
+      # Mosaico (opcional): SAM 3 trabaja a ~1008 px; en fotos grandes los
+      # objetos finos (cables) quedan por debajo de 1 px y no se detectan.
+      # tiles: [4, 3] añade una pasada por teselas (4 columnas x 3 filas) que se
+      # SUMA a la de la imagen completa. Coste: 1 inferencia extra por tesela.
+      tiles: null
+      tile_overlap: 0.15      # solape entre teselas (fracción de su tamaño)
+      tile_prompts: null      # prompts solo para las teselas; null = los mismos
       # dilate_px: 25        # opcional: los cables agradecen más margen
     manual:
       dir: mask_overrides     # relativo a datasets/raw/<escena>/ (o ruta absoluta)
