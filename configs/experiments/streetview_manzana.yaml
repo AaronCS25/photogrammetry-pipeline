@@ -52,6 +52,9 @@ colmap:
       ImageReader.camera_params: "953.4028740753681,953.4028740753681,800,600"
       SiftExtraction.estimate_affine_shape: 1     # panoramas a ~10 m: cambio de
       SiftExtraction.domain_size_pooling: 1       # perspectiva grande entre vecinos
+      # Afín + DSP extraen en CPU con un hilo por núcleo DEL NODO (no del job):
+      # sin este límite la memoria se dispara (OOM con 32G).
+      SiftExtraction.num_threads: 8
   matcher:
     methods: [exhaustive]                         # 246 imágenes: barato
     extra_args:
