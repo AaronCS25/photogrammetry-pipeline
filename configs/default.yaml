@@ -163,6 +163,10 @@ colmap:
 georef:
   enabled: false
   alignment_type: enu        # enu: GPS del EXIF -> metros, Z arriba | plane: sin GPS, solo endereza
+  # Posiciones desde un CSV en vez del EXIF (imágenes sin GPS embebido, p. ej.
+  # recortes de Street View): columnas file|name, lat, lon y alt opcional.
+  # Ruta relativa a datasets/raw/<escena>/ o absoluta. null = usar el EXIF.
+  reference_file: null
   max_error_m: 3.0           # error máximo (m) del ajuste robusto contra el GPS
   min_common_images: 3
   fallback_plane: true       # sin GPS suficiente: enderezar por plano principal (NO métrico)

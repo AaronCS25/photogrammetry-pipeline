@@ -123,6 +123,7 @@ en el centro de la escena**, y opcionalmente recortado a una región de interés
 |---|---|---|
 | `enabled` | `false` | Con `false` el pipeline es idéntico al flujo sin georef. |
 | `alignment_type` | `enu` | `enu`: `colmap model_aligner` con el GPS del EXIF (leído de la base de datos) → marco métrico. `plane`: sin GPS, endereza con el plano principal (no métrico). |
+| `reference_file` | `null` | CSV con posiciones para imágenes **sin GPS en el EXIF** (p. ej. el `indice.csv` de un export de Street View): columnas `file`\|`name`, `lat`, `lon` y `alt` opcional (default 0). Relativo a la carpeta de la escena o absoluto. Las filas se emparejan por `fuente/archivo` o por nombre de archivo único. `null` = GPS del EXIF. |
 | `max_error_m` | `3.0` | Error máximo del ajuste robusto contra el GPS (el GPS de consumo tiene 2–5 m). |
 | `fallback_plane` | `true` | Si no hay GPS suficiente, usar `plane` con aviso en vez de fallar. |
 | `center` / `center_source` | `true` / `null` | Traslada el origen al centro de la escena (mediana XY de las cámaras; `center_source: drone` usa solo esa fuente — recomendable si el teléfono solo cubre un lado). `z = 0` queda cerca del suelo. |

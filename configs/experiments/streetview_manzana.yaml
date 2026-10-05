@@ -1,0 +1,81 @@
+# Manzana desde recortes de Google Street View (export de barranco-streetview).
+# PRUEBA: 41 panoramas x 6 vistas virtuales (1600x1232, FOV 80°) por manzana.
+#
+# La carpeta del export se sube TAL CUAL como escena (no hay que reorganizar):
+#   datasets/raw/<escena>/fachadas/*.jpg            -> fuente 'fachadas'
+#   datasets/raw/<escena>/mascaras/fachadas/*.png   -> máscaras de la franja de atribución
+#   datasets/raw/<escena>/indice.csv                -> lat/lon por imagen (georef)
+#
+# Qué se aprovecha del export:
+#   - camaras.json: intrínsecos EXACTOS (proyección virtual sin distorsión) ->
+#     PINHOLE fijo; COLMAP no tiene que estimar focal ni distorsión.
+#   - mascaras/: franja inferior "Google Maps | © | Captura" (32 px) fuera de
+#     features, densificación y textura (backend 'manual').
+#   - indice.csv: posición de cada panorama -> modelo en metros y Z arriba.
+#
+# Antes de subir: todas las imágenes deben medir 1600x1232. Si el export trae
+# algún panorama antiguo de otra resolución (ver image_width en indice.csv),
+# borrar sus 6 vistas.
+#
+#   ./slurm/submit.sh configs/experiments/streetview_manzana.yaml <escena>
+
+experiment:
+  name: streetview_v1
+  notes: "Street View: PINHOLE fijo (camaras.json), segformer + franja de atribución, georef desde indice.csv."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  # SegFormer-Cityscapes está en su dominio (imágenes a nivel de calle desde un
+  # auto). 'manual' suma las máscaras del export.
+  backend: [segformer, manual]
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky, vegetation, pole]
+  dilate_px: 10
+  apply_to_dense: true
+  apply_to_texture: true
+  backends:
+    manual:
+      dir: mascaras
+
+colmap:
+  camera_model: PINHOLE
+  feature_extractor:
+    max_image_size: 1600
+    max_num_features: 16384
+    extra_args:
+      # fx, fy, cx, cy de camaras.json (cy = 600: la franja inferior no es imagen)
+      ImageReader.camera_params: "953.4028740753681,953.4028740753681,800,600"
+      SiftExtraction.estimate_affine_shape: 1     # panoramas a ~10 m: cambio de
+      SiftExtraction.domain_size_pooling: 1       # perspectiva grande entre vecinos
+  matcher:
+    methods: [exhaustive]                         # 246 imágenes: barato
+    extra_args:
+      SiftMatching.guided_matching: 1
+  mapper:
+    extra_args:
+      Mapper.ba_refine_focal_length: 0            # intrínsecos conocidos: no tocarlos
+      Mapper.ba_refine_extra_params: 0
+      Mapper.abs_pose_min_num_inliers: 20
+      Mapper.min_num_matches: 10
+
+georef:
+  enabled: true
+  alignment_type: enu
+  reference_file: indice.csv
+  max_error_m: 5.0                # panoramas de pasadas/fechas distintas: GPS con sesgos propios
+  ground_below_min_camera_m: 2.5  # altura aproximada de la cámara de Street View
+  roi:
+    enabled: false                # las vistas ya miran solo hacia la manzana. Si se activa,
+                                  # fijar height_m: el default (cámara más alta) cortaría a ~2.5 m
+
+openmvs:
+  densify:
+    resolution_level: 0           # imágenes pequeñas: resolución completa
+  texture:
+    extra_args:
+      empty-color: 8421504        # gris en las caras sin vista

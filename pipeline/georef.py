@@ -105,6 +105,85 @@ def read_gps_priors(db_path: Path) -> tuple[list[tuple[str, float, float, float]
     return valid, invalid
 
 
+def reference_file_path(ctx: Context) -> Path | None:
+    """georef.reference_file resuelto (relativo a la carpeta de la escena o absoluto)."""
+    ref = (ctx.cfg.get("georef") or {}).get("reference_file")
+    if not ref:
+        return None
+    path = Path(str(ref))
+    return path if path.is_absolute() else ctx.raw_dir / path
+
+
+def db_image_names(db_path: Path) -> list[str]:
+    import sqlite3
+
+    con = sqlite3.connect(str(db_path))
+    try:
+        return [r[0] for r in con.execute("SELECT name FROM images ORDER BY image_id")]
+    finally:
+        con.close()
+
+
+_REF_COLUMNS = {
+    "name": ("file", "name", "image", "filename"),
+    "lat": ("lat", "latitude"),
+    "lon": ("lon", "lng", "long", "longitude"),
+    "alt": ("alt", "altitude", "elevation"),
+}
+
+
+def read_reference_file(path: Path, image_names: list[str]
+                        ) -> tuple[list[tuple[str, float, float, float]], int]:
+    """(nombre, lat, lon, alt) desde un CSV con cabecera, para imágenes sin GPS
+    en el EXIF (p. ej. recortes de Street View, cuyo índice trae lat/lon).
+
+    Columnas: file|name|image, lat, lon y opcionalmente alt (default 0: las
+    cámaras quedan en un plano horizontal). Cada fila se empareja con una imagen
+    de la base de datos por ruta ('fuente/archivo') o, si no, por nombre de
+    archivo cuando es único. Devuelve (válidas, nº de filas descartadas).
+    """
+    import csv
+    import math
+
+    exact = {n.lower(): n for n in image_names}
+    by_base: dict[str, list[str]] = {}
+    for n in image_names:
+        by_base.setdefault(n.rsplit("/", 1)[-1].lower(), []).append(n)
+
+    with open(path, newline="", encoding="utf-8-sig") as fh:   # -sig: tolera BOM
+        reader = csv.DictReader(fh)
+        fields = {(f or "").strip().lower(): f for f in (reader.fieldnames or [])}
+        col = {key: next((fields[a] for a in aliases if a in fields), None)
+               for key, aliases in _REF_COLUMNS.items()}
+        missing = [k for k in ("name", "lat", "lon") if col[k] is None]
+        if missing:
+            raise CommandError(
+                f"georef.reference_file {path}: faltan columnas {missing} "
+                f"(cabecera encontrada: {reader.fieldnames})")
+        valid: list[tuple[str, float, float, float]] = []
+        seen: set[str] = set()
+        skipped = 0
+        for row in reader:
+            key = (row.get(col["name"]) or "").strip().replace("\\", "/").lower()
+            same_base = by_base.get(key.rsplit("/", 1)[-1], [])
+            name = exact.get(key) or (same_base[0] if len(same_base) == 1 else None)
+            try:
+                lat, lon = float(row[col["lat"]]), float(row[col["lon"]])
+                alt = float(row.get(col["alt"]) or 0.0) if col["alt"] else 0.0
+            except (TypeError, ValueError):
+                skipped += 1
+                continue
+            if (name is None or name in seen
+                    or not all(math.isfinite(v) for v in (lat, lon, alt))
+                    or (abs(lat) < 1e-6 and abs(lon) < 1e-6)
+                    or abs(lat) > 90 or abs(lon) > 180):
+                skipped += 1
+                continue
+            seen.add(name)
+            valid.append((name, lat, lon, alt))
+    return valid, skipped
+
+
 # ---------------------------------------------------------------------------
 # Geometría (sin dependencias: testeable sin COLMAP)
 # ---------------------------------------------------------------------------
@@ -227,15 +306,25 @@ def run_georef(ctx: Context) -> None:
     metric = alignment == "enu"
 
     gps_info: dict = {}
+    # Posiciones desde archivo (en vez del EXIF). Si se pidió y no existe es un
+    # error de configuración: no se degrada en silencio al plano principal.
+    ref_path = reference_file_path(ctx)
+    if ref_path is not None and not ref_path.is_file():
+        raise CommandError(f"georef.reference_file no existe: {ref_path}")
 
     def align(kind: str) -> None:
         cmd = ["colmap", "model_aligner", "--input_path", source_model,
                "--output_path", aligned, "--alignment_type", kind]
         if kind == "enu":
             min_common = int(gcfg.get("min_common_images", 3))
-            refs, invalid = read_gps_priors(database_path(ctx))
-            print(f"[georef] GPS en la base de datos: {len(refs)} válidos, {invalid} "
-                  "descartados (sin fijar satélites: lat=lon=0)")
+            if ref_path is not None:
+                refs, invalid = read_reference_file(ref_path, db_image_names(database_path(ctx)))
+                print(f"[georef] posiciones de {ref_path.name}: {len(refs)} imágenes "
+                      f"emparejadas, {invalid} filas descartadas")
+            else:
+                refs, invalid = read_gps_priors(database_path(ctx))
+                print(f"[georef] GPS en la base de datos: {len(refs)} válidos, {invalid} "
+                      "descartados (sin fijar satélites: lat=lon=0)")
             if len(refs) < min_common:
                 raise CommandError(f"solo {len(refs)} imágenes con GPS válido "
                                    f"(se necesitan {min_common})")
@@ -245,6 +334,7 @@ def run_georef(ctx: Context) -> None:
                 "".join(f"{n} {lat:.10f} {lon:.10f} {alt:.4f}\n" for n, lat, lon, alt in refs),
                 encoding="utf-8")
             gps_info.update({
+                "gps_source": ref_path.name if ref_path is not None else "exif",
                 "gps_valid": len(refs), "gps_discarded": invalid,
                 "enu_origin_gps": {"image": refs[0][0], "lat": refs[0][1],
                                    "lon": refs[0][2], "alt": refs[0][3]},
@@ -260,7 +350,8 @@ def run_georef(ctx: Context) -> None:
         align(alignment)
     except CommandError as exc:
         if alignment == "enu" and gcfg.get("fallback_plane", True):
-            print("[georef] AVISO: alineación GPS (enu) falló — ¿fotos sin GPS en el EXIF? "
+            print(f"[georef] AVISO: alineación GPS (enu) falló ({str(exc).splitlines()[0]}) — "
+                  "¿fotos sin GPS en el EXIF? Para posiciones en un CSV: georef.reference_file. "
                   "Se endereza con el plano principal: orientación correcta, escala NO métrica.")
             alignment, metric = "plane", False
             align("plane")

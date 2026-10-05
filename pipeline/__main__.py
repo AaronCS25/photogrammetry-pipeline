@@ -235,7 +235,11 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"\nGeorreferenciación: {gcfg.get('alignment_type')} "
               f"(fallback plano: {'sí' if gcfg.get('fallback_plane', True) else 'no'}) | "
               f"centro: {gcfg.get('center_source') or 'todas las cámaras'} | ROI: {roi_txt}")
-        if str(gcfg.get("alignment_type", "enu")).lower() == "enu":
+        ref_path = georef_mod.reference_file_path(ctx)
+        if ref_path is not None:
+            print(f"  posiciones desde archivo: {ref_path} "
+                  f"({'OK' if ref_path.is_file() else 'NO EXISTE'})")
+        elif str(gcfg.get("alignment_type", "enu")).lower() == "enu":
             print("  (requiere GPS en el EXIF de al menos "
                   f"{gcfg.get('min_common_images', 3)} imágenes registradas)")
 
