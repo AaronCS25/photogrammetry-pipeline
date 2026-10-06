@@ -1,7 +1,7 @@
 # Manzana El Hornero — v4: igual que hornero_drone_geo_tiles (georef + ROI +
 # SAM 3 con mosaico) más FILTRADO GEOMÉTRICO de los cables que las máscaras no
 # atrapan (hilos finos). Un cable que se escapa en 2-3 fotos deja puntos
-# aislados en la nube densa; aquí se exige que cada punto lo confirmen 3 vistas
+# aislados en la nube densa; aquí se exige que cada punto lo confirmen 4 vistas
 # y se eliminan caras con aristas largas o componentes sueltos en la malla.
 #
 # Reutiliza máscaras y sparse de v3_tiles (solo repite desde dense, ~25 min):
@@ -12,7 +12,7 @@
 
 experiment:
   name: hornero_drone_v4_clean
-  notes: "v3_tiles + filtrado geometrico de cables: number-views-fuse 3, remove-spurious 60, smooth 3. Masks y sparse reutilizados de v3_tiles."
+  notes: "v3_tiles + filtrado geometrico de cables: number-views-fuse 4, remove-spurious 60, smooth 3. Masks y sparse reutilizados de v3_tiles."
 
 frames:
   resize: null
@@ -68,7 +68,8 @@ openmvs:
   densify:
     resolution_level: 1
     extra_args:
-      number-views-fuse: 3      # default 2: un punto necesita 3 vistas que coincidan
+      number-views-fuse: 4      # default 3 (verificado en el codigo de OpenMVS 2.3.0): un cable
+                                # enmascarado en casi todas las fotos no junta 4 vistas y se descarta
   mesh:
     extra_args:
       remove-spurious: 60       # default 20 (v3: 40): caras largas y componentes sueltos
