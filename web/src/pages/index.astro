@@ -1,0 +1,44 @@
+---
+import '../styles/studio.css';
+---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Estudio local para operar el pipeline de fotogrametría en Khipu"/>
+  <title>Fotogrametría · Barranco</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='14' height='14' rx='3' fill='%231f5d4a'/%3E%3Cpath d='M4 12V6l4-2 4 2v6' fill='none' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">◩</span> Fotogrametría <span class="dim">/ Barranco</span></div>
+    <form id="search-form" class="search" autocomplete="off">
+      <input id="search" list="search-list" placeholder="Buscar manzana, nombre o escena…" aria-label="Buscar"/>
+      <datalist id="search-list"></datalist>
+    </form>
+    <div class="top-actions">
+      <span id="connection" class="pill"><i></i> Sin conectar</span>
+      <span id="sync-time" class="dim small"></span>
+      <button id="refresh" class="button">↻ Actualizar</button>
+    </div>
+  </header>
+  <main class="workspace">
+    <section class="map-pane">
+      <div id="map" aria-label="Mapa de manzanas de Barranco"></div>
+      <div class="map-tools">
+        <label class="toggle"><input id="show-lots" type="checkbox"/> Lotes</label>
+        <button id="fit" class="icon-button" title="Ver todo Barranco" aria-label="Ver todo Barranco">⤢</button>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </main>
+  <footer class="statusbar">
+    <span id="summary">Cargando…</span>
+    <label class="toggle"><input id="auto" type="checkbox"/> Seguimiento cada 5 min con jobs activos</label>
+  </footer>
+  <dialog id="detail" class="wide"><div id="detail-body"></div></dialog>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <script>import '../client/studio.ts';</script>
+</body>
+</html>

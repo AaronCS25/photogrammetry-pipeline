@@ -1,8 +1,23 @@
 # Plan: interfaz web local para operar el pipeline en Khipu
 
-Estado: PLAN (2026-10-06). Nada implementado todavía. Este documento es el
-brief para la sesión que lo implemente; está escrito para alguien que no ha
-visto las conversaciones previas.
+Estado: **fase 1 implementada** (2026-10-06) en `web/` (ver `web/README.md`);
+fases 2-4 pendientes. Este documento es el brief para quien implemente las
+siguientes; está escrito para alguien que no ha visto las conversaciones
+previas.
+
+Desviaciones de la fase 1 respecto a este plan:
+- SQLite con `node:sqlite` (nativo de Node 22, como barranco-studio) en vez de
+  `better-sqlite3`: evita compilar un módulo nativo en Windows. Archivo
+  `web/data/studio.db`. Tablas de fase 1: `settings`, `manzanas` (nombre
+  libre), `scene_links` (vínculo manual escena→manzana), `snapshots` (último
+  listado). Datasets/experimentos/jobs/eventos se añadirán en la fase 2.
+- GIS: el archivo real es `barranco-streetview/data/lotes.geojson` (ya en
+  WGS84). `web/scripts/build_manzanas.py` genera `web/public/gis/manzanas.geojson`
+  y `lotes.geojson`.
+- Puerto 4323 (barranco-studio usa 4322).
+- Las escenas existentes no siguen la convención `mz_xxxxxx`; se vinculan a
+  una manzana por `identificacion.json`/`manifest.json` del export de Street
+  View, por el origen GPS del georef (≤ 30 m) o a mano desde el mapa.
 
 ## Problema
 
