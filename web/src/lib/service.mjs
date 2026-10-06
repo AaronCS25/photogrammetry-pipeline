@@ -8,6 +8,7 @@ import { derive, indexManzanas } from './derive.mjs';
 import { scanFolder, KINDS } from './media.mjs';
 import { uploadTar } from './upload.mjs';
 import { buildConfig, toYaml, parseSbatch, sbatchFromForm, gresType, STAGES, PRESETS } from './presets.mjs';
+import { storePreviews, cachedPreviews, fetchFiles, partSize, openFolder, downloadDir, compareRows } from './results.mjs';
 
 export const store = openStore();
 const manzanas = indexManzanas(JSON.parse(readFileSync(path.resolve('public/gis/manzanas.geojson'), 'utf8')));
@@ -19,6 +20,8 @@ let queue = Promise.resolve(), busy = 0;
 function serial(task) { busy++; const result = queue.then(task); queue = result.catch(() => {}).finally(() => busy--); return result; }
 let uploadQueue = Promise.resolve();
 const uploads = new Map(); // datasetId -> {controller, progress}
+let downloadQueue = Promise.resolve();
+const downloads = new Map(); // `${escena}__${exp}` -> {controller, current}
 
 const SCENE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$/;
 const NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/; // escenas y experimentos nuevos
@@ -56,6 +59,8 @@ export function state() {
     root: snapshot?.root, lastSync: snapshot?.at || null, connection: store.setting('connection'),
     names: store.names(), links: store.links(), auto: store.setting('auto') !== false, busy,
     uploading: [...uploads.keys()],
+    downloads: store.downloads.all().map(d => ({ ...d, progress: downloadProgress(d) })),
+    downloading: [...downloads.keys()],
   };
 }
 
@@ -82,7 +87,20 @@ export function refresh({ force = false } = {}) {
   }));
 }
 
-export function metrics(sceneName, experiment) { return call({ op: 'metrics', scene: scene(sceneName), experiment: scene(experiment) }); }
+// Versión de un experimento según el último listado: cambia si se rehacen etapas o se reescribe metrics.json.
+const metricsCache = new Map();
+function expVersion(sceneName, experiment) {
+  const e = store.snapshot()?.scenes?.find(s => s.name === sceneName)?.experiments?.find(x => x.name === experiment);
+  return e ? JSON.stringify([e.mtime, e.metrics?.generated_at, Object.values(e.stages || {}).map(st => st.at)]) : null;
+}
+export async function metrics(sceneName, experiment) {
+  const key = `${scene(sceneName)}/${scene(experiment)}`, version = expVersion(sceneName, experiment);
+  const hit = metricsCache.get(key);
+  if (hit && version && hit.version === version) return hit.data;
+  const data = await call({ op: 'metrics', scene: sceneName, experiment });
+  metricsCache.set(key, { version, data });
+  return data;
+}
 
 export function log(job, filtered) {
   if (!/^[0-9]{1,12}$/.test(String(job))) throw Error('Job no válido.');
@@ -351,5 +369,71 @@ export async function cloneExperiment({ scene: sceneName, experiment }) {
 export function cancelJob(job) {
   if (!/^[0-9]{1,12}$/.test(String(job))) throw Error('Job no válido.');
   return call({ op: 'cancel', job: String(job) }).then(r => { store.event('cancel', String(job), `scancel ${job}.`); refresh({ force: true }).catch(() => {}); return r; });
+}
+
+// ------------------------------------------------------------------ resultados (fase 3)
+/** Vistas previas de máscaras: caché local salvo que el experimento haya cambiado o se pidan de nuevo. */
+export async function previews(sceneName, experiment, force = false) {
+  sceneName = scene(sceneName); experiment = scene(experiment);
+  const cached = cachedPreviews(sceneName, experiment), version = expVersion(sceneName, experiment);
+  if (cached && !force && version && cached.version === version) return cached;
+  const result = await call({ op: 'previews', scene: sceneName, experiment, force, max: 12 }, 360000);
+  return storePreviews(sceneName, experiment, { ...result, version });
+}
+export function cachedPreviewIndex(sceneName, experiment) { return cachedPreviews(scene(sceneName), scene(experiment)); }
+
+function downloadProgress(d) {
+  const live = downloads.get(d.id);
+  if (!live) return null;
+  const done = d.files.filter(f => f.done).reduce((a, f) => a + f.size, 0);
+  return { current: live.current, sent: done + (live.current ? partSize(d.dir, live.current) : 0), total: d.bytes };
+}
+
+/** Descarga la malla texturizada (+ métricas) a ~/Downloads/barranco_experiments/<escena>__<exp>/. */
+export function downloadMesh(sceneName, experiment) {
+  sceneName = scene(sceneName); experiment = scene(experiment);
+  const key = `${sceneName}__${experiment}`;
+  if (downloads.has(key)) throw Error('La descarga ya está en curso.');
+  const controller = new AbortController(), live = { controller, current: null };
+  downloads.set(key, live);
+  downloadQueue = downloadQueue.then(async () => {
+    const dir = downloadDir(sceneName, experiment);
+    let doc = { id: key, scene: sceneName, experiment, dir, status: 'listando', at: Date.now(), files: [], bytes: 0, error: null };
+    store.downloads.put(doc);
+    try {
+      const root = store.snapshot()?.root || (await health()).root;
+      const list = await call({ op: 'mesh_files', scene: sceneName, experiment });
+      doc = store.downloads.put({ ...doc, status: 'descargando', files: list.files.map(f => ({ ...f, done: false })), bytes: list.bytes });
+      await fetchFiles({ root, scene: sceneName, experiment, files: list.files, dir, signal: controller.signal,
+        onFile: name => {
+          live.current = name;
+          const cur = store.downloads.get(key);
+          // marca como hechos los anteriores al archivo en curso
+          const idx = cur.files.findIndex(f => f.name === name);
+          store.downloads.put({ ...cur, files: cur.files.map((f, i) => i < idx ? { ...f, done: true } : f) });
+        } });
+      const cur = store.downloads.get(key);
+      store.downloads.put({ ...cur, status: 'lista', files: cur.files.map(f => ({ ...f, done: true })), finishedAt: Date.now() });
+      store.event('download', key, `Malla de ${sceneName}/${experiment} descargada en ${dir}.`);
+    } catch (e) {
+      store.downloads.put({ ...store.downloads.get(key), status: 'error', error: e.message });
+      store.event('download', key, `Descarga de ${sceneName}/${experiment}: ${e.message}`);
+    } finally { downloads.delete(key); }
+  });
+  return { ok: true };
+}
+
+export function openDownload(key) {
+  const d = store.downloads.get(String(key));
+  if (!d) throw Error('Descarga no encontrada.');
+  openFolder(d.dir);
+  return { ok: true };
+}
+
+/** Tabla comparativa de dos experimentos (pueden ser de escenas distintas de la misma manzana). */
+export async function compare(a, b) {
+  const [ma, mb] = [await metrics(a.scene, a.experiment), await metrics(b.scene, b.experiment)];
+  if (!ma.metrics && !mb.metrics) throw Error('Ninguno de los dos tiene metrics.json todavía.');
+  return { a, b, rows: compareRows(ma.metrics || {}, mb.metrics || {}) };
 }
 

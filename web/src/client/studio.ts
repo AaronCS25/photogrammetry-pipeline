@@ -1,14 +1,15 @@
 import L from 'leaflet';
 import { $, esc, STATUS, badge, pct, bytes, duration, ago, toast, api } from './util';
 import { initForms, openCapture, openExperiment, openRelaunch, cloneAsNew } from './forms';
+import { initResults, meshBox, previewsBox, openCompare } from './results';
 import { STAGES } from '../lib/presets.mjs';
 
 const COLORS:any={none:'#b9bfb6',data:'#6f8fb3',partial:'#9b8fb0',queued:'#d19a2a',running:'#2f74c9',done:'#3f8f5a',failed:'#c8483c'};
 const VIA:any={manual:'vínculo manual',export:'identificacion.json del export',nombre:'por nombre de escena',georef:'aprox. por GPS del georef (≤ 30 m)'};
 const POLL=5*60_000;
 
-let state:any={scenes:[],manzanas:{},jobs:[],names:{},datasets:[],experimentsLocal:[],launches:[],events:[],uploading:[]},gis:any,lotsLayer:any=null,layer:any;
-let view:any={kind:'overview'},assigning:string|null=null;
+let state:any={scenes:[],manzanas:{},jobs:[],names:{},datasets:[],experimentsLocal:[],launches:[],events:[],uploading:[],downloads:[],downloading:[]},gis:any,lotsLayer:any=null,layer:any;
+let view:any={kind:'overview'},assigning:string|null=null,detailOf:{scene:string,experiment:string}|null=null;
 const layers=new Map<string,any>();
 
 const nameOf=(id:string)=>state.names[id]||'';
@@ -80,6 +81,7 @@ function experimentCard(scene:any,exp:any){
     ${exp.job?`<div class="jobline">${jobLine(exp.job)}${exp.jobs.length>1?` <span class="dim">(+${exp.jobs.length-1} anteriores)</span>`:''}</div>`:''}
     ${exp.job?.state==='RUNNING'&&exp.job.stage?`<div class="progress-line"><b>${esc(exp.job.stage)}</b> ${esc(exp.job.last||'')}</div>`:''}
     ${notices?`<ul class="notices">${notices}</ul>`:''}
+    ${(()=>{const d=state.downloads.find((x:any)=>x.id===`${scene.name}__${exp.name}`);return d?.status==='lista'?`<div class="small ok">Malla en tu equipo ✓ <button class="link" data-act-r="open" data-id="${esc(d.id)}">abrir carpeta</button></div>`:state.downloading.includes(`${scene.name}__${exp.name}`)?'<div class="small dim">Descargando malla…</div>':'';})()}
     <div class="actions">
       ${exp.placeholder?'':`<button class="button small" data-detail="${esc(scene.name)}|${esc(exp.name)}">Detalle</button>`}
       ${active?`<button class="button small danger" data-cancel="${esc(exp.job.id)}">Cancelar job</button>`:''}
@@ -149,7 +151,7 @@ function renderManzana(id:string){
       <div><dt>Lotes</dt><dd>${p.lotCount}${p.groupingValid?'':' <span class="warn">(agrupación inválida: lote suelto)</span>'}</dd></div>
       <div><dt>Área</dt><dd>${Math.round(p.area_m2).toLocaleString('es-PE')} m²</dd></div>
     </dl>
-    <div class="actions head-actions"><button class="button primary" data-capture="${esc(id)}">Nueva captura</button><button class="button" data-newexp-m="${esc(id)}">Nuevo experimento</button></div>
+    <div class="actions head-actions"><button class="button primary" data-capture="${esc(id)}">Nueva captura</button><button class="button" data-newexp-m="${esc(id)}">Nuevo experimento</button>${scenes.reduce((n:number,s:any)=>n+(s.experiments||[]).filter((e:any)=>!e.placeholder).length,0)>=2?`<button class="button" data-compare="${esc(id)}">Comparar experimentos</button>`:''}</div>
     ${(()=>{
       const names=new Set([...scenes.map((s:any)=>s.name),...state.datasets.filter((d:any)=>d.manzana===id).map((d:any)=>d.scene)]);
       const datasets=state.datasets.filter((d:any)=>d.manzana===id);
@@ -213,6 +215,7 @@ function render(){
   $('panel').innerHTML=banner+(view.kind==='manzana'?renderManzana(view.id):view.kind==='scene'?renderScene(view.name):renderOverview());
   document.body.classList.toggle('is-assigning',Boolean(assigning));
   layer?.setStyle(style);
+  if(detailOf&&$('detail').open&&$('mesh-box'))$('mesh-box').innerHTML=meshBox(detailOf.scene,detailOf.experiment);
   $('search-list').innerHTML=[
     ...state.scenes.map((s:any)=>`<option value="${esc(s.name)}">escena</option>`),
     ...Object.entries(state.names).map(([id,n]:any)=>`<option value="${esc(n)}">${esc(id)}</option>`),
@@ -224,15 +227,17 @@ $('legend').innerHTML=['none','data','queued','running','done','failed'].map(s=>
 function table(rows:any[][]){return `<table class="kv">${rows.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join('')}</table>`;}
 async function openDetail(sceneName:string,expName:string){
   const scene=state.scenes.find((s:any)=>s.name===sceneName),exp=scene?.experiments.find((e:any)=>e.name===expName);
-  const base=`outputs/${sceneName}/${expName}`;
   $('detail-body').innerHTML=`<header class="dialog-head"><div><div class="eyebrow">${esc(sceneName)}</div><h2>${esc(expName)}</h2></div><button class="close" data-close>×</button></header><p class="dim">Cargando métricas desde Khipu…</p>`;
   $('detail').showModal();
+  detailOf=null;
   let data:any={};
   try{data=await api('metrics',{scene:sceneName,experiment:expName});}catch(e:any){data={error:e.message};}
   const m=data.metrics||{},sp=m.sparse||{},g=data.georef||m.georef,mk=m.masking;
   const timings=Object.entries(m.timings_seconds||{}).sort(([a],[b])=>STAGES.indexOf(a)-STAGES.indexOf(b)).map(([k,v])=>[k,duration(v)]);
   const artifacts=Object.entries(m.artifacts||{}).filter(([,v])=>v).map(([k,v]:any)=>[k,`<code>${esc(v.path)}</code> <span class="dim">${v.size_mb} MB</span>`]);
   const jobs=(exp?.jobs||[]).map((id:string)=>state.jobs.find((j:any)=>j.id===id)||{id});
+  const meshes=Object.entries(m.meshes||{}).map(([k,v]:any)=>[k,`${(v.vertices??0).toLocaleString('es-PE')} vértices · ${(v.faces??0).toLocaleString('es-PE')} caras`]);
+  detailOf={scene:sceneName,experiment:expName};
   $('detail-body').innerHTML=`<header class="dialog-head"><div><div class="eyebrow">${esc(sceneName)}</div><h2>${esc(expName)} ${exp?badge(exp.status):''}</h2></div><button class="close" data-close>×</button></header>
     ${data.error?`<p class="warn">${esc(data.error)}</p>`:''}
     ${!data.metrics&&!data.error?'<p class="dim">Este experimento todavía no tiene <code>metrics/metrics.json</code>.</p>':''}
@@ -251,9 +256,10 @@ async function openDetail(sceneName:string,expName:string){
       ['Origen ENU',g.enu_origin_gps?`${g.enu_origin_gps.lat?.toFixed(6)}, ${g.enu_origin_gps.lon?.toFixed(6)} <span class="dim">(${esc(g.enu_origin_gps.image)})</span>`:'—'],
       ['Cámaras',esc(g.cameras??'—')],['Desplazamiento',esc(JSON.stringify(g.enu_offset_m??'—'))],['ROI',esc(g.roi?JSON.stringify(g.roi):'—')],
     ])}`:''}
-    ${mk?`<h3>Máscaras</h3>${table([['Backends',esc(JSON.stringify(mk.backends))],['% enmascarado',esc(Object.entries(mk.mean_masked_ratio||{}).map(([k,v])=>`${k}: ${pct(v)}`).join(', '))]])}`:''}
-    ${artifacts.length?`<h3>Artefactos</h3>${table(artifacts)}`:''}
-    ${exp?.textured?`<p class="dim small">Descarga manual (la fase 3 lo hará desde aquí):<br><code class="copy">scp "khipu:${esc(state.root)}/${esc(base)}/mvs/scene_texture*" .</code></p>`:''}
+    ${mk||exp?.masks?.length?`<h3>Máscaras</h3>${mk?table([['Backends',esc(JSON.stringify(mk.backends))],['% enmascarado',esc(Object.entries(mk.mean_masked_ratio||{}).map(([k,v])=>`${k}: ${pct(v)}`).join(', '))]]):''}${previewsBox(sceneName,expName)}`:''}
+    ${meshes.length?`<h3>Malla</h3>${table(meshes)}`:''}
+    ${exp?.textured?`<div id="mesh-box">${meshBox(sceneName,expName)}</div>`:''}
+    ${artifacts.length?`<details><summary class="dim small">Artefactos en Khipu</summary>${table(artifacts)}</details>`:''}
     <h3>Jobs</h3>
     ${jobs.length?`<ul class="joblist">${jobs.map((j:any)=>`<li>${jobLine(j)} <button class="link" data-log="${esc(j.id)}" data-filtered="1">log filtrado</button></li>`).join('')}</ul>`:'<p class="dim">Sin jobs conocidos (marcadores sin <code>slurm_job_id</code>).</p>'}
     <pre id="log-view" class="log" hidden></pre>`;
@@ -294,6 +300,7 @@ document.addEventListener('click',(e:any)=>{
   else if(d.cancel){if(confirm(`¿Cancelar el job ${d.cancel} (scancel)?`))action(()=>api('cancel',{job:d.cancel}).then(()=>toast(`Job ${d.cancel} cancelado.`)),t);}
   else if(d.relaunch){const [s,x]=d.relaunch.split('|');openRelaunch(s,x);}
   else if(d.clone){const [s,x]=d.clone.split('|');cloneAsNew(state.scenes.find((y:any)=>y.name===s)?.manzana||null,s,x,t);}
+  else if(d.compare)openCompare(d.compare);
   else if(d.checklaunch)action(()=>api('launch/check',{id:d.checklaunch}).then((l:any)=>toast(l.job?`Encontrado: job ${l.job}.`:'Sigue sin encontrarse el job: revisa squeue y slurm-logs.',!l.job)),t);
   else if(t.id==='first-sync')sync(true,t);
 });
@@ -320,7 +327,7 @@ async function load(){
   try{state=await api('state');render();}catch(e:any){toast(e.message,true);}
   // Progreso de subidas: consulta solo el servidor local (no Khipu) cada 2 s.
   clearTimeout(fastPoll);
-  if(state.uploading.length||state.busy)fastPoll=setTimeout(load,2000);
+  if(state.uploading.length||state.downloading.length||state.busy)fastPoll=setTimeout(load,2000);
 }
 async function sync(force:boolean,button?:HTMLButtonElement){
   await action(async()=>{const r=await api('refresh',{force});if(r.skipped)toast('Listado reciente; espera unos segundos.');},button);
@@ -331,4 +338,5 @@ setInterval(()=>{
 },60_000);
 
 initForms({state:()=>state,load,feature});
+initResults({state:()=>state,load});
 loadGis().then(load);

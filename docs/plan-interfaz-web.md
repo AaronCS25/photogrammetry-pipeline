@@ -1,10 +1,25 @@
 # Plan: interfaz web local para operar el pipeline en Khipu
 
-Estado: **fases 1 y 2 implementadas** (2026-10-06) en `web/` (ver
-`web/README.md`); fases 3-4 pendientes. La fase 2 tiene tests con Khipu
-simulado; falta su primera prueba real (subida + validate + submit). Este
-documento es el brief para quien implemente las siguientes; está escrito para
-alguien que no ha visto las conversaciones previas.
+Estado: **fases 1, 2 y 3 implementadas** (2026-10-06) en `web/` (ver
+`web/README.md`); la fase 4 queda como lista de ideas. Probado contra Khipu:
+listado, subida + reanudación + verificación, validate, descarga de malla y
+comparación. Sin probar en real: submit/cancel/relanzar/clonar (tests con
+Khipu simulado). Este documento está escrito para alguien que no ha visto las
+conversaciones previas.
+
+Decisiones de la fase 3:
+- `python3 -m pipeline previews --scene X --experiment Y [--max 12] [--size 640]`
+  (`pipeline/previews.py`) en `segmentation.sif` (único con PIL), en el
+  maestro: 12 vistas de fotos de 36 MP en ~6 s. Escribe
+  `outputs/<escena>/<exp>/previews/masks/` + `index.json`; el bridge las
+  reutiliza si son más nuevas que `masks/` y las devuelve en base64 (un solo
+  ssh, ~50 kB cada una). Overlay **magenta**, no rojo: el rojo se confundía con
+  fachadas pintadas (El Hornero). Requiere `git pull` en Khipu.
+- Descarga: `scene_texture.*` + texturas + `metrics.json`/`georef_info.json`
+  con scp, verificando SHA-256 calculado en Khipu; los archivos ya bajados con
+  el mismo hash se omiten. Progreso por tamaño del `.part`.
+- Comparación: dos experimentos cualesquiera de la manzana; métricas cacheadas
+  por versión del experimento (mtime + `generated_at` + marcadores).
 
 Desviaciones y decisiones de la fase 2:
 - Subida: en vez de `scp` por fuente, un tar generado en Node se envía por

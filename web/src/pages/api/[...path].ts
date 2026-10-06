@@ -1,4 +1,6 @@
 import * as service from '../../lib/service.mjs';
+import { previewPath } from '../../lib/results.mjs';
+import { readFileSync, existsSync } from 'node:fs';
 
 export const prerender=false;
 const json=(data:any,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
@@ -26,6 +28,11 @@ const POST:Record<string,(b:any)=>any>={
   'launch/check':b=>service.checkLaunch(b.id),
   relaunch:b=>service.relaunch(b),
   cancel:b=>service.cancelJob(b.job),
+  // fase 3
+  previews:b=>service.previews(b.scene,b.experiment,Boolean(b.force)),
+  'mesh/download':b=>service.downloadMesh(b.scene,b.experiment),
+  'mesh/open':b=>service.openDownload(b.id),
+  compare:b=>service.compare(b.a,b.b),
 };
 export async function ALL({request,params,url}:any) {
   try {
@@ -33,6 +40,12 @@ export async function ALL({request,params,url}:any) {
     const route=params.path||'';
     if(request.method==='GET'){
       if(route==='state')return json(service.state());
+      if(route.startsWith('preview/')){
+        const [,sceneName,experiment,source,file]=route.split('/').map(decodeURIComponent);
+        const file_=previewPath(sceneName,experiment,source,file);
+        if(!existsSync(file_))return json({error:'Vista previa no descargada.'},404);
+        return new Response(readFileSync(file_),{headers:{'Content-Type':'image/jpeg','Cache-Control':'private, max-age=600','X-Content-Type-Options':'nosniff'}});
+      }
       return json({error:'No encontrado'},404);
     }
     if(request.method!=='POST')return json({error:'Método no permitido'},405);

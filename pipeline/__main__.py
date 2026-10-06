@@ -3,6 +3,7 @@
   python3 -m pipeline run      --config configs/experiments/x.yaml --scene mi_escena
   python3 -m pipeline validate --config configs/experiments/x.yaml --scene mi_escena
   python3 -m pipeline report
+  python3 -m pipeline previews --scene mi_escena --experiment mi_exp   (contenedor de segmentación)
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from . import georef as georef_mod
 from . import mvs as mvs_mod
 from .metrics import run_metrics
 from .report import run_report
+from .previews import run_previews
 
 # Orden canónico de etapas
 STAGE_ORDER = ["frames", "telemetry", "masks", "sfm", "georef", "undistort",
@@ -257,6 +259,11 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_previews(args: argparse.Namespace) -> int:
+    run_previews(args.scene, args.experiment, args.max, args.size, args.output_root)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="pipeline", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -292,6 +299,15 @@ def main() -> int:
     p_rep.add_argument("--output-root", help="Raíz de outputs (por defecto: outputs/)")
     p_rep.add_argument("--output", help="Ruta del CSV de salida")
     p_rep.set_defaults(func=cmd_report)
+
+    p_prev = sub.add_parser("previews", help="Vistas previas reducidas de las máscaras (requiere PIL: "
+                                             "contenedor de segmentación)")
+    p_prev.add_argument("--scene", required=True)
+    p_prev.add_argument("--experiment", required=True)
+    p_prev.add_argument("--max", type=int, default=12, help="Nº de imágenes (repartidas entre fuentes)")
+    p_prev.add_argument("--size", type=int, default=640, help="Lado mayor en px")
+    p_prev.add_argument("--output-root", help="Raíz de outputs (por defecto: outputs/)")
+    p_prev.set_defaults(func=cmd_previews)
 
     # Salida robusta a terminales/pipes sin UTF-8 (Windows, redirecciones);
     # antes de parse_args para que también cubra los mensajes de argparse.

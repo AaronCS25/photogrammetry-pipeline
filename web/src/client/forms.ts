@@ -15,6 +15,8 @@ export function initForms(context:Ctx){
   $('form-body').addEventListener('input',(e:any)=>inputHandler?.(e));
   $('form-body').addEventListener('change',(e:any)=>changeHandler?.(e));
   dialog().addEventListener('click',(e:any)=>{if(e.target===dialog())close();});
+  // Esc también cierra: que no queden manejadores del diálogo anterior escuchando.
+  dialog().addEventListener('close',()=>{inputHandler=changeHandler=null;});
 }
 function close(){dialog().close();inputHandler=changeHandler=null;}
 const handlers:Record<string,(t:any,e:any)=>void>={close};

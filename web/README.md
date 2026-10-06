@@ -9,6 +9,8 @@ mapa de las manzanas de Barranco. Plan completo:
   últimas 3 semanas, con log completo o filtrado.
 - **Operar** (fase 2): subir capturas, crear experimentos (formulario simple o
   YAML), validar, lanzar, seguir, relanzar y cancelar.
+- **Resultados** (fase 3): vistas previas de máscaras, descarga de la malla
+  para Blender y comparación de experimentos.
 
 Nunca ejecuta git ni toca `configs/` del repo: los YAML de la app viven en
 `datasets/raw/<escena>/_ui/` (ignorada por el pipeline por el prefijo `_`).
@@ -48,6 +50,14 @@ npm start       # http://127.0.0.1:4323
    repetir desde una etapa) o **Nueva versión** (clona la configuración y puede
    reutilizar etapas copiando la carpeta del experimento).
 
+4. **Detalle** de un experimento: métricas, tiempos, georef y malla.
+   **Ver vistas previas** muestra 12 frames con lo enmascarado en magenta
+   (`pipeline previews` en Khipu; necesita el pipeline actualizado con
+   `git pull`). **Descargar malla** copia `scene_texture.*`, texturas y
+   métricas a `Descargas/barranco_experiments/<escena>__<exp>/` verificando
+   SHA-256; **Abrir carpeta** la abre en el Explorador. En la manzana,
+   **Comparar experimentos** pone dos experimentos lado a lado.
+
 Si se pierde la respuesta de un envío, aparece «envío incierto»: **Comprobar
 envío** pregunta a Khipu con el mismo id (recibo en `_ui/requests/`); nunca se
 relanza a ciegas.
@@ -80,6 +90,7 @@ relanza a ciegas.
   último listado, nombres de manzanas, vínculos manuales, capturas, borradores
   de experimento, envíos y actividad. Khipu es la fuente de verdad de archivos
   y jobs.
-  `STUDIO_DATA_DIR` permite otra ubicación.
+  Las vistas previas se guardan en `data/previews/`. `STUDIO_DATA_DIR` y
+  `STUDIO_DOWNLOADS` permiten otras ubicaciones.
 - La API solo atiende loopback y comprueba el `Origin` en los POST. No es
   multiusuario: no exponerla en la red.

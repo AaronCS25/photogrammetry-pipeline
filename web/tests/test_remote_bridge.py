@@ -169,6 +169,34 @@ class BridgeTests(unittest.TestCase):
         stored = json.loads((self.root / 'datasets/raw/mz_a/_ui/requests' / (rid + '.json')).read_text())
         self.assertEqual(stored['job'], '888')
 
+    def test_mesh_files_lists_texture_and_metrics(self):
+        base = 'outputs/mz_a/v1/'
+        for rel, text in (('mvs/scene_texture.obj', 'v 0 0 0'), ('mvs/scene_texture.mtl', 'm'), ('mvs/scene_texture.mvs', 'x'),
+                          ('mvs/scene_texture_material_0_map_Kd.jpg', 'j'), ('mvs/scene_dense.ply', 'p'),
+                          ('metrics/metrics.json', '{}')):
+            self.write(base + rel, text)
+        r = bridge.mesh_files({'scene': 'mz_a', 'experiment': 'v1'})
+        self.assertEqual([f['name'] for f in r['files']], ['scene_texture.mtl', 'scene_texture.obj',
+                                                          'scene_texture_material_0_map_Kd.jpg', 'metrics.json'])
+        self.assertEqual(r['files'][1]['sha256'], bridge.digest(self.root / base / 'mvs/scene_texture.obj'))
+        self.write('outputs/mz_a/v2/mvs/scene_dense.ply', 'p')
+        with self.assertRaises(ValueError):
+            bridge.mesh_files({'scene': 'mz_a', 'experiment': 'v2'})
+
+    def test_previews_reuse_and_missing_command(self):
+        base = 'outputs/mz_a/v1/'
+        self.write(base + 'masks/phone/a.jpg.png', 'm')
+        with patch.object(bridge.subprocess, 'run', side_effect=AssertionError('no debe ejecutar')):
+            with self.assertRaises(ValueError) as ctx:
+                bridge.previews({'scene': 'mz_a', 'experiment': 'v1'})
+        self.assertIn('git pull', str(ctx.exception))
+        self.write(base + 'previews/masks/phone/a.jpg', 'JPEG')
+        self.write(base + 'previews/masks/index.json', json.dumps({'items': [{'file': 'phone/a.jpg'}, {'file': '../../../x.jpg'}]}))
+        with patch.object(bridge.subprocess, 'run', side_effect=AssertionError('no debe ejecutar')):
+            r = bridge.previews({'scene': 'mz_a', 'experiment': 'v1'})
+        self.assertTrue(r['reused'])
+        self.assertEqual(list(r['files']), ['phone/a.jpg'])
+
     def test_clone_keeps_only_reused_stages(self):
         src = 'outputs/mz_a/v1/'
         for rel in ('frames/phone/a.jpg', 'masks/phone/a.png', 'colmap/database.db', 'colmap/sparse/0/x.bin',

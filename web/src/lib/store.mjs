@@ -5,6 +5,7 @@ import path from 'node:path';
 // Índice/caché local. Khipu es la fuente de verdad de los archivos.
 // Fase 1: último listado remoto, nombres libres de manzanas y vínculos manuales escena→manzana.
 // Fase 2: capturas (datasets), experimentos y envíos (launches) creados desde la app, y eventos.
+// Fase 3: descargas de mallas (downloads). Las vistas previas van como archivos en <data>/previews/.
 export const dataDir = path.resolve(process.env.STUDIO_DATA_DIR || 'data');
 export function openStore(dir = dataDir) {
   mkdirSync(dir, { recursive: true });
@@ -17,6 +18,7 @@ export function openStore(dir = dataDir) {
     CREATE TABLE IF NOT EXISTS datasets (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS launches (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS downloads (id TEXT PRIMARY KEY, body TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT, message TEXT NOT NULL);`);
   // Colecciones de documentos JSON: el esquema evoluciona sin migraciones.
   const collection = table => ({
@@ -48,6 +50,7 @@ export function openStore(dir = dataDir) {
     datasets: collection('datasets'),
     experiments: collection('experiments'),
     launches: collection('launches'),
+    downloads: collection('downloads'),
     event(kind, ref, message) { db.prepare('INSERT INTO events (at,kind,ref,message) VALUES (?,?,?,?)').run(Date.now(), kind, ref ?? null, message); },
     events(limit = 30) { return db.prepare('SELECT at,kind,ref,message FROM events ORDER BY id DESC LIMIT ?').all(limit); },
     close() { db.close(); },

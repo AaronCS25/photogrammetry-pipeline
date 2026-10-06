@@ -124,6 +124,7 @@ seleccionan etapas.
 python3 -m pipeline run --config <cfg> --scene <escena> [--stages sfm,dense] [--from-stage dense] [--force]
 python3 -m pipeline validate --config <cfg> --scene <escena>
 python3 -m pipeline report          # consolida todos los metrics.json en un CSV comparativo
+python3 -m pipeline previews --scene <escena> --experiment <exp>   # vistas previas de máscaras (en segmentation.sif)
 ```
 
 ## Métricas

@@ -487,9 +487,68 @@ def read_config(req):
     raise ValueError('No hay YAML guardado para %s/%s' % (scene, exp))
 
 
+# ---------------------------------------------------------------- resultados (fase 3)
+def exp_dir(req):
+    base = safe('outputs/%s/%s' % (identifier(req['scene']), identifier(req['experiment'])))
+    if not base.is_dir():
+        raise ValueError('No existe outputs/%s/%s' % (req['scene'], req['experiment']))
+    return base
+
+
+def previews(req):
+    """Vistas previas de máscaras: reutiliza las existentes si son más nuevas que masks/; si no, las
+    genera con `pipeline previews` en el contenedor de segmentación (CPU, unos segundos). Devuelve
+    el índice y las imágenes en base64 (reducidas: ~50 kB cada una)."""
+    base = exp_dir(req)
+    out, masks = base / 'previews' / 'masks', base / 'masks'
+    if not masks.is_dir():
+        raise ValueError('Este experimento no tiene máscaras.')
+    index_file = out / 'index.json'
+    fresh = index_file.is_file() and index_file.stat().st_mtime >= masks.stat().st_mtime
+    if req.get('force') or not fresh:
+        if not (ROOT / 'pipeline' / 'previews.py').is_file():
+            raise ValueError('El pipeline en Khipu no tiene `pipeline previews`: haz git pull en %s.' % ROOT)
+        count = max(1, min(int(req.get('max', 12)), 40))
+        run = subprocess.run(['apptainer', 'exec', 'containers/segmentation.sif', 'python3', '-m', 'pipeline', 'previews',
+                              '--scene', base.parent.name, '--experiment', base.name, '--max', str(count), '--size', '640'],
+                             cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, timeout=300)
+        if run.returncode != 0:
+            raise ValueError('pipeline previews falló: ' + run.stdout[-1500:])
+    index = read_json(index_file) or {}
+    files = {}
+    for item in index.get('items', []):
+        path = (out / item['file']).resolve()
+        if os.path.commonpath([str(path), str(out.resolve())]) == str(out.resolve()) and path.is_file() and path.stat().st_size < 1 << 20:
+            files[item['file']] = base64.b64encode(path.read_bytes()).decode('ascii')
+    return {'index': index, 'files': files, 'reused': fresh and not req.get('force')}
+
+
+def mesh_files(req):
+    """Archivos para abrir la malla en Blender: scene_texture.* (obj/mtl/ply/glb) y sus texturas,
+    más metrics.json y georef_info.json como referencia. Con tamaño y SHA-256 para verificar la copia."""
+    base = exp_dir(req)
+    mvs = base / 'mvs'
+    names = sorted(p for p in mvs.glob('scene_texture*') if p.is_file() and p.suffix.lower() not in ('.mvs', '.log', '.dmap'))
+    if not names:
+        raise ValueError('Este experimento no tiene malla texturizada (mvs/scene_texture.*).')
+    extra = [base / 'metrics' / 'metrics.json', base / 'metrics' / 'georef_info.json']
+    out = []
+    for path in names + [p for p in extra if p.is_file()]:
+        out.append({'name': path.name, 'path': str(path), 'size': path.stat().st_size, 'sha256': digest_file(path)})
+    return {'files': out, 'bytes': sum(f['size'] for f in out)}
+
+
+def digest_file(path):
+    h = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1 << 20), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
 def dispatch(req):
     op = req.get('op')
-    if op in ('ls', 'validate', 'submit', 'cancel', 'read_config'):
+    if op in ('ls', 'validate', 'submit', 'cancel', 'read_config', 'previews', 'mesh_files'):
         return globals()[op](req)
     if op == 'health':
         checks = {p: (ROOT / p).exists() for p in ('slurm/submit.sh', 'containers/photogrammetry.sif',
