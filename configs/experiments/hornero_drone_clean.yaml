@@ -79,3 +79,7 @@ openmvs:
   texture:
     extra_args:
       empty-color: 8421504    # gris 0x808080 en vez del naranja por defecto
+      # Cables finos sin enmascarar quedan PINTADOS en la textura de la pared.
+      # Una vista cuyo color para una cara se aleja del resto se descarta si su
+      # verosimilitud gaussiana es <= este umbral (default 0.06; mayor = mas estricto).
+      outlier-threshold: 0.2
