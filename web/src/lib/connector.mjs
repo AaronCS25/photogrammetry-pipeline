@@ -20,11 +20,11 @@ export function execute(program, args, input='', timeout=90000) {
 }
 export const options=['-o','BatchMode=yes','-o','ConnectTimeout=12','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2','-o','StrictHostKeyChecking=yes'];
 // Un solo ssh por consulta: el bridge Python va por stdin con la petición embebida en base64.
-export async function remote(request) {
+export async function remote(request, timeout=120000) {
   const bridge=readFileSync(path.resolve('scripts/remote_bridge.py'),'utf8');
   const encoded=Buffer.from(JSON.stringify(request)).toString('base64');
   const code=bridge+`\ntry:\n    print(json.dumps({'ok': True, 'data': dispatch(json.loads(base64.b64decode('${encoded}')))}))\nexcept Exception as exc:\n    print(json.dumps({'ok': False, 'error': str(exc)}))\n`;
-  const raw=await execute('ssh',['-T',...options,process.env.KHIPU_HOST||'khipu','python3 -'],code,120000);
+  const raw=await execute('ssh',['-T',...options,process.env.KHIPU_HOST||'khipu','python3 -'],code,timeout);
   let response;
   try { response=JSON.parse(raw); } catch { throw Error('Khipu no devolvió una respuesta válida. Revisa la conexión SSH.'); }
   if(!response.ok) throw Error(response.error);

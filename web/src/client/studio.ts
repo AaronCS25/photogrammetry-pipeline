@@ -1,30 +1,18 @@
 import L from 'leaflet';
+import { $, esc, STATUS, badge, pct, bytes, duration, ago, toast, api } from './util';
+import { initForms, openCapture, openExperiment, openRelaunch, cloneAsNew } from './forms';
+import { STAGES } from '../lib/presets.mjs';
 
-const $=(id:string)=>document.getElementById(id) as any;
-const esc=(v:any)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-const STAGES=['frames','telemetry','masks','sfm','georef','undistort','dense','mesh','texture','metrics'];
-const STATUS:any={none:'Sin datos',data:'Con datos',partial:'Incompleto',queued:'En cola',running:'Corriendo',done:'Listo',failed:'Fallido'};
 const COLORS:any={none:'#b9bfb6',data:'#6f8fb3',partial:'#9b8fb0',queued:'#d19a2a',running:'#2f74c9',done:'#3f8f5a',failed:'#c8483c'};
 const VIA:any={manual:'vínculo manual',export:'identificacion.json del export',nombre:'por nombre de escena',georef:'aprox. por GPS del georef (≤ 30 m)'};
 const POLL=5*60_000;
 
-let state:any={scenes:[],manzanas:{},jobs:[],names:{}},gis:any,lotsLayer:any=null,layer:any;
-let view:any={kind:'overview'},assigning:string|null=null,toastTimer:any;
+let state:any={scenes:[],manzanas:{},jobs:[],names:{},datasets:[],experimentsLocal:[],launches:[],events:[],uploading:[]},gis:any,lotsLayer:any=null,layer:any;
+let view:any={kind:'overview'},assigning:string|null=null;
 const layers=new Map<string,any>();
 
-// ---------- utilidades ----------
-const badge=(s:string,extra='')=>`<span class="badge s-${esc(s)}">${esc(STATUS[s]||s)}${extra?` · ${esc(extra)}`:''}</span>`;
-const pct=(v:any)=>v==null?'—':`${(100*v).toFixed(v<0.1?1:0)} %`;
-const bytes=(n:number)=>n>=1e9?`${(n/1e9).toFixed(1)} GB`:n>=1e6?`${(n/1e6).toFixed(0)} MB`:`${Math.round(n/1e3)} kB`;
-function duration(s:any){if(s==null)return '—';s=Math.round(s);const h=Math.floor(s/3600),m=Math.round(s%3600/60);return h?`${h} h ${m} min`:m?`${m} min`:`${s} s`;}
-function ago(t:number){const m=Math.round((Date.now()-t)/60000);return m<1?'hace un momento':m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:new Date(t).toLocaleDateString('es-PE',{day:'2-digit',month:'short'});}
 const nameOf=(id:string)=>state.names[id]||'';
 const feature=(id:string)=>gis.byId.get(id);
-function toast(message:string,error=false){$('toast').textContent=message;$('toast').className=error?'error':'';$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,7000);}
-async function api(route:string,body?:any){
-  const response=await fetch('/api/'+route,body===undefined?{}:{method:'POST',body:JSON.stringify(body),headers:{'Content-Type':'application/json'}});
-  const data=await response.json();if(!response.ok)throw Error(data.error||'No se pudo completar la operación.');return data;
-}
 async function action(fn:()=>Promise<any>,button?:HTMLButtonElement){
   if(button)button.disabled=true;
   try{await fn();}catch(e:any){toast(e.message,true);}finally{if(button)button.disabled=false;await load();}
@@ -83,20 +71,28 @@ function experimentCard(scene:any,exp:any){
     ['Textura',exp.textured?'sí':'no'],
   ].filter(Boolean) as any[];
   const notices=(exp.job?.notices||[]).map((n:string)=>`<li>${esc(n)}</li>`).join('');
+  const active=['queued','running'].includes(exp.status)&&exp.job?.active;
   return `<article class="exp">
     <header><strong>${esc(exp.name)}</strong>${badge(exp.status,exp.status==='failed'?exp.job?.state:'')}</header>
     ${exp.placeholder?'':stagesBar(exp)}
     ${exp.placeholder?'':`<dl class="facts">${facts.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>`}
     ${m.notes?`<p class="notes">${esc(m.notes)}</p>`:''}
     ${exp.job?`<div class="jobline">${jobLine(exp.job)}${exp.jobs.length>1?` <span class="dim">(+${exp.jobs.length-1} anteriores)</span>`:''}</div>`:''}
+    ${exp.job?.state==='RUNNING'&&exp.job.stage?`<div class="progress-line"><b>${esc(exp.job.stage)}</b> ${esc(exp.job.last||'')}</div>`:''}
     ${notices?`<ul class="notices">${notices}</ul>`:''}
-    ${exp.placeholder?'':`<div class="actions"><button class="button small" data-detail="${esc(scene.name)}|${esc(exp.name)}">Detalle</button></div>`}
+    <div class="actions">
+      ${exp.placeholder?'':`<button class="button small" data-detail="${esc(scene.name)}|${esc(exp.name)}">Detalle</button>`}
+      ${active?`<button class="button small danger" data-cancel="${esc(exp.job.id)}">Cancelar job</button>`:''}
+      ${!active&&!exp.placeholder?`<button class="button small" data-relaunch="${esc(scene.name)}|${esc(exp.name)}">Relanzar…</button>`:''}
+      ${exp.placeholder?'':`<button class="button small ghost" data-clone="${esc(scene.name)}|${esc(exp.name)}">Nueva versión</button>`}
+    </div>
   </article>`;
 }
 function sceneCard(scene:any,{withLink=true}={}){
   const sources=scene.sources==null?'<span class="warn">Sin carpeta en datasets/raw</span>':scene.sources.length?scene.sources.map((s:any)=>`<span class="source">${esc(s.name)} <b>${s.files}</b> <span class="dim">${bytes(s.bytes)}</span></span>`).join(''):'<span class="dim">sin fuentes</span>';
   const via=scene.manzana?`<span class="dim small">${esc(VIA[scene.via]||'')}</span>`:'';
   const controls=withLink?`<div class="actions">
+      ${scene.sources?.length?`<button class="button small primary-outline" data-newexp="${esc(scene.name)}">Nuevo experimento</button>`:''}
       <button class="button small" data-assign="${esc(scene.name)}">${scene.manzana?'Mover a otra manzana':'Asignar a manzana'}</button>
       ${scene.manzana?`<button class="button small ghost" data-unlink="${esc(scene.name)}">Quitar</button>`:''}
       ${scene.via==='manual'?`<button class="button small ghost" data-auto="${esc(scene.name)}">Detección automática</button>`:''}
@@ -110,6 +106,35 @@ function sceneCard(scene:any,{withLink=true}={}){
     ${controls}
   </section>`;
 }
+// ---------- fase 2: capturas, borradores y envíos ----------
+const UPLOAD:any={pending:'pendiente',uploading:'subiendo',uploaded:'subido, sin verificar',verified:'verificado ✓',error:'error',interrupted:'interrumpida'};
+const KIND:any={drone_photos:'dron',phone_photos:'teléfono',video:'video',streetview_export:'Street View',other:'otra'};
+function datasetCard(d:any){
+  const uploading=state.uploading.includes(d.id),p=d.progress;
+  const verified=d.sources.every((s:any)=>s.status==='verified');
+  const ratio=p?.total?p.sent/p.total:0;
+  return `<div class="dataset">
+    <header><strong>${esc(d.scene)}</strong><span class="small ${verified?'ok':'dim'}">${verified?'en Khipu ✓':uploading?'subiendo…':'subida incompleta'}</span></header>
+    ${d.notes?`<p class="notes">${esc(d.notes)}</p>`:''}
+    <ul class="ds-sources">${d.sources.map((s:any)=>`<li><code>${esc(s.name||'(raíz)')}</code> ${esc(KIND[s.kind])} · ${s.count} arch. · ${bytes(s.bytes)} · <span class="up-${esc(s.status)}">${esc(UPLOAD[s.status]||s.status)}</span>${s.error?`<div class="warn small">${esc(s.error)}</div>`:''}</li>`).join('')}</ul>
+    ${uploading&&p?`<div class="bar"><i style="width:${(100*ratio).toFixed(1)}%"></i></div><div class="dim small">${esc(p.phase)} · ${bytes(p.sent)} / ${bytes(p.total||0)} · ${p.done}/${p.files} archivos${p.skipped?` (${p.skipped} ya estaban)`:''}${p.current?` · ${esc(p.current)}`:''}</div>`:''}
+    <div class="actions">
+      ${uploading?`<button class="button small danger" data-cancelupload="${esc(d.id)}">Cancelar subida</button>`:verified?'':`<button class="button small" data-upload="${esc(d.id)}">${d.sources.some((s:any)=>s.status!=='pending')?'Reanudar subida':'Subir'}</button>`}
+      ${uploading?'':`<button class="button small ghost" data-removeds="${esc(d.id)}">Quitar de la lista</button>`}
+    </div></div>`;
+}
+function draftCard(e:any){
+  const v=e.validation,valid=v?.ok&&v.sha256===e.sha256;
+  return `<div class="draft"><div><strong>${esc(e.name)}</strong> <span class="dim small">${esc(e.scene)} · ${e.mode==='simple'?esc(e.form?.preset||''):'YAML'}${e.clone?` · reutiliza ${esc(e.clone.from)} hasta ${esc(e.clone.fromStage)}`:''}</span></div>
+    <span class="small ${valid?'ok':'dim'}">${valid?'validado ✓':v?'validación con errores':'sin validar'}</span>
+    <button class="button small" data-editexp="${esc(e.id)}">Abrir</button></div>`;
+}
+function launchIssue(l:any){
+  return `<div class="issue"><b>${esc(l.scene)}/${esc(l.experiment)}</b> · envío ${l.status==='uncertain'?'incierto':'fallido'}: ${esc(l.error||'')}
+    ${l.status==='uncertain'?`<button class="button small" data-checklaunch="${esc(l.id)}">Comprobar envío</button>`:''}</div>`;
+}
+const recentIssues=(scenes?:Set<string>)=>state.launches.filter((l:any)=>['uncertain','error'].includes(l.status)&&Date.now()-l.at<3*86400000&&(!scenes||scenes.has(l.scene)));
+
 function renderManzana(id:string){
   const f=feature(id);if(!f){view={kind:'overview'};return renderOverview();}
   const p=f.properties,scenes=state.scenes.filter((s:any)=>s.manzana===id);
@@ -124,6 +149,16 @@ function renderManzana(id:string){
       <div><dt>Lotes</dt><dd>${p.lotCount}${p.groupingValid?'':' <span class="warn">(agrupación inválida: lote suelto)</span>'}</dd></div>
       <div><dt>Área</dt><dd>${Math.round(p.area_m2).toLocaleString('es-PE')} m²</dd></div>
     </dl>
+    <div class="actions head-actions"><button class="button primary" data-capture="${esc(id)}">Nueva captura</button><button class="button" data-newexp-m="${esc(id)}">Nuevo experimento</button></div>
+    ${(()=>{
+      const names=new Set([...scenes.map((s:any)=>s.name),...state.datasets.filter((d:any)=>d.manzana===id).map((d:any)=>d.scene)]);
+      const datasets=state.datasets.filter((d:any)=>d.manzana===id);
+      const drafts=state.experimentsLocal.filter((e:any)=>!e.launched&&names.has(e.scene));
+      const issues=recentIssues(names);
+      return (issues.length?issues.map(launchIssue).join(''):'')+
+        (datasets.length?`<h2 class="section">Capturas subidas desde aquí <span class="count">${datasets.length}</span></h2>${datasets.map(datasetCard).join('')}`:'')+
+        (drafts.length?`<h2 class="section">Borradores <span class="count">${drafts.length}</span></h2>${drafts.map(draftCard).join('')}`:'');
+    })()}
     <h2 class="section">Escenas en Khipu <span class="count">${scenes.length}</span></h2>
     ${scenes.length?scenes.map((s:any)=>sceneCard(s)).join(''):`<p class="empty">Aún no hay datos de esta manzana en Khipu. Para que una escena aparezca aquí, nómbrala <code>${esc(p.scene)}</code> (o <code>${esc(p.scene)}_…</code>), o asígnala desde la lista de escenas sin manzana.</p>`}`;
 }
@@ -133,7 +168,7 @@ function renderScene(name:string){
 }
 function renderOverview(){
   if(!state.lastSync)return `<div class="hero"><h1>Lo que ya existe en Khipu</h1>
-    <p>Lista escenas de <code>datasets/raw/</code>, experimentos de <code>outputs/</code>, sus métricas y los jobs <code>photogram</code> de las últimas semanas. Solo lectura: no se escribe ni se lanza nada.</p>
+    <p>Lista escenas de <code>datasets/raw/</code>, experimentos de <code>outputs/</code>, sus métricas y los jobs <code>photogram</code> de las últimas semanas. Desde una manzana puedes subir capturas y lanzar experimentos.</p>
     <p class="dim small">Usa <code>ssh khipu</code> con tu clave (BatchMode); la app no guarda credenciales.</p>
     <button class="button primary" id="first-sync">Conectar y listar Khipu</button></div>`;
   const scenes=state.scenes,unlinked=scenes.filter((s:any)=>!s.manzana);
@@ -149,6 +184,11 @@ function renderOverview(){
       <div><b>${active.length}</b><span>jobs activos</span></div>
     </div>
     ${Object.keys(counts).length?`<p class="dim small">${Object.entries(counts).map(([s,n])=>`${n} ${STATUS[s].toLowerCase()}`).join(' · ')}</p>`:''}
+    ${(()=>{
+      const uploading=state.datasets.filter((d:any)=>state.uploading.includes(d.id));
+      const issues=recentIssues();
+      return (issues.length?issues.map(launchIssue).join(''):'')+(uploading.length?`<h2 class="section">Subidas en curso</h2>${uploading.map(datasetCard).join('')}`:'');
+    })()}
     <h2 class="section">Jobs recientes <span class="count">${state.jobs.length}</span></h2>
     ${recent.length?`<table class="jobs"><tbody>${recent.map((j:any)=>`<tr>
       <td><button class="link" data-log="${esc(j.id)}">${esc(j.id)}</button></td>
@@ -157,7 +197,8 @@ function renderOverview(){
       <td class="dim small">${esc(j.elapsed||'')}</td></tr>`).join('')}</tbody></table>`:'<p class="dim">Sin jobs <code>photogram</code> en las últimas 3 semanas.</p>'}
     <h2 class="section">Escenas sin manzana <span class="count">${unlinked.length}</span></h2>
     <p class="dim small">Pruebas o escenas con nombre libre. Ábrela y asígnala a una manzana con un clic en el mapa.</p>
-    <ul class="scene-list">${unlinked.map((s:any)=>`<li><button class="link" data-scene="${esc(s.name)}">${esc(s.name)}</button> ${badge(s.status)} <span class="dim small">${(s.experiments||[]).length} exp.</span></li>`).join('')}</ul>`;
+    <ul class="scene-list">${unlinked.map((s:any)=>`<li><button class="link" data-scene="${esc(s.name)}">${esc(s.name)}</button> ${badge(s.status)} <span class="dim small">${(s.experiments||[]).length} exp.</span></li>`).join('')}</ul>
+    ${state.events.length?`<h2 class="section">Actividad de la app</h2><ul class="events">${state.events.slice(0,10).map((e:any)=>`<li><span class="dim small">${ago(e.at)}</span> ${esc(e.message)}</li>`).join('')}</ul>`:''}`;
 }
 function render(){
   const c=state.connection;
@@ -243,6 +284,17 @@ document.addEventListener('click',(e:any)=>{
   else if(d.unlink)action(()=>api('link',{scene:d.unlink,manzana:null}),t);
   else if(d.auto)action(()=>api('link',{scene:d.auto}),t);
   else if(t.id==='cancel-assign'){assigning=null;render();}
+  else if(d.capture)openCapture(d.capture);
+  else if(d.newexpM)openExperiment({manzana:d.newexpM});
+  else if(d.newexp){const s=state.scenes.find((x:any)=>x.name===d.newexp);openExperiment({manzana:s?.manzana||null,scene:d.newexp});}
+  else if(d.editexp){const e=state.experimentsLocal.find((x:any)=>x.id===d.editexp);if(e)openExperiment({manzana:e.manzana,draft:e});}
+  else if(d.upload)action(()=>api('dataset/upload',{id:d.upload}),t);
+  else if(d.cancelupload)action(()=>api('dataset/cancel',{id:d.cancelupload}),t);
+  else if(d.removeds){if(confirm('¿Quitar esta captura de la lista local? No se borra nada en Khipu.'))action(()=>api('dataset/delete',{id:d.removeds}),t);}
+  else if(d.cancel){if(confirm(`¿Cancelar el job ${d.cancel} (scancel)?`))action(()=>api('cancel',{job:d.cancel}).then(()=>toast(`Job ${d.cancel} cancelado.`)),t);}
+  else if(d.relaunch){const [s,x]=d.relaunch.split('|');openRelaunch(s,x);}
+  else if(d.clone){const [s,x]=d.clone.split('|');cloneAsNew(state.scenes.find((y:any)=>y.name===s)?.manzana||null,s,x,t);}
+  else if(d.checklaunch)action(()=>api('launch/check',{id:d.checklaunch}).then((l:any)=>toast(l.job?`Encontrado: job ${l.job}.`:'Sigue sin encontrarse el job: revisa squeue y slurm-logs.',!l.job)),t);
   else if(t.id==='first-sync')sync(true,t);
 });
 $('detail').addEventListener('click',(e:any)=>{if(e.target===$('detail'))$('detail').close();});
@@ -263,7 +315,13 @@ $('search-form').addEventListener('submit',(e:any)=>{
   render();
 });
 
-async function load(){try{state=await api('state');render();}catch(e:any){toast(e.message,true);}}
+let fastPoll:any=null;
+async function load(){
+  try{state=await api('state');render();}catch(e:any){toast(e.message,true);}
+  // Progreso de subidas: consulta solo el servidor local (no Khipu) cada 2 s.
+  clearTimeout(fastPoll);
+  if(state.uploading.length||state.busy)fastPoll=setTimeout(load,2000);
+}
 async function sync(force:boolean,button?:HTMLButtonElement){
   await action(async()=>{const r=await api('refresh',{force});if(r.skipped)toast('Listado reciente; espera unos segundos.');},button);
 }
@@ -272,4 +330,5 @@ setInterval(()=>{
   if(state.auto&&document.visibilityState==='visible'&&state.jobs.some((j:any)=>j.active)&&Date.now()-(state.lastSync||0)>=POLL)sync(false);
 },60_000);
 
+initForms({state:()=>state,load,feature});
 loadGis().then(load);

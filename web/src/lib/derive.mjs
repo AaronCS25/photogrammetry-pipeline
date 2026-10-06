@@ -83,8 +83,14 @@ export function experimentStatus(exp, jobs) {
 }
 
 /** Enriquece el listado remoto: manzana de cada escena, estado de cada experimento y estado por manzana. */
-export function derive(snapshot, index, manual = {}) {
-  const jobs = snapshot?.jobs || [];
+export function derive(snapshot, index, manual = {}, launches = []) {
+  // Un job en cola aún no tiene log: su escena/experimento salen del envío local (id o comentario studio:<id>).
+  const byJob = new Map(launches.filter(l => l.job).map(l => [String(l.job), l]));
+  const byComment = new Map(launches.map(l => [`studio:${l.id}`, l]));
+  const jobs = (snapshot?.jobs || []).map(j => {
+    const l = byJob.get(j.id) || byComment.get(j.comment);
+    return l && !j.scene ? { ...j, scene: l.scene, experiment: l.experiment, launch: l.id } : l ? { ...j, launch: l.id } : j;
+  });
   const scenes = (snapshot?.scenes || []).map(scene => {
     const experiments = (scene.experiments || []).map(exp => {
       const own = experimentJobs(scene.name, exp, jobs);

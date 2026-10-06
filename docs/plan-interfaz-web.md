@@ -1,9 +1,37 @@
 # Plan: interfaz web local para operar el pipeline en Khipu
 
-Estado: **fase 1 implementada** (2026-10-06) en `web/` (ver `web/README.md`);
-fases 2-4 pendientes. Este documento es el brief para quien implemente las
-siguientes; está escrito para alguien que no ha visto las conversaciones
-previas.
+Estado: **fases 1 y 2 implementadas** (2026-10-06) en `web/` (ver
+`web/README.md`); fases 3-4 pendientes. La fase 2 tiene tests con Khipu
+simulado; falta su primera prueba real (subida + validate + submit). Este
+documento es el brief para quien implemente las siguientes; está escrito para
+alguien que no ha visto las conversaciones previas.
+
+Desviaciones y decisiones de la fase 2:
+- Subida: en vez de `scp` por fuente, un tar generado en Node se envía por
+  `ssh khipu "tar -x"` (una conexión por fuente). Da progreso exacto por bytes,
+  no depende de rsync y es reanudable: antes se lista la escena remota y se
+  omiten los archivos con el mismo nombre y tamaño. Verificación final: todos
+  los archivos presentes con el mismo tamaño (más fuerte que `ls | wc -l`).
+- Fotos con dimensiones mixtas (verticales) se suben automáticamente a una
+  fuente aparte `<fuente>_<ancho>x<alto>/` (una cámara por fuente).
+- `validate` corre en el maestro con `apptainer exec
+  containers/photogrammetry.sif` (el conda del maestro no tiene PyYAML).
+- Envío idempotente: recibo en `datasets/raw/<escena>/_ui/requests/<id>.json`
+  escrito ANTES de `sbatch` y `--comment=studio:<id>`. Si se pierde la
+  respuesta, «Comprobar envío» reintenta con el mismo id y el bridge busca el
+  job por comentario (squeue) o por la cabecera del log; nunca relanza a
+  ciegas. Ojo: Khipu no guarda comentarios en sacct (`AccountingStoreFlags`
+  vacío).
+- SBATCH_OPTS se derivan del formulario (GPU, shards, CPUs, RAM, horas) y son
+  editables; solo se aceptan `--gres`, `--cpus-per-task`, `--mem`, `--time`,
+  `--partition`, `--nodelist`, `--exclude`. SAM 3 fuerza A6000/A100.
+- Relanzar: «Reanudar» (mismo YAML, etapas hechas se omiten) o «Repetir desde
+  etapa» (`--from-stage X --force`), siempre con validate antes. «Nueva
+  versión» clona la configuración (formulario o `config_resolved.yaml`) y puede
+  reutilizar etapas: el bridge copia `outputs/<escena>/<origen>/` sin lo que
+  rehacen las etapas siguientes y sin sus marcadores.
+- Cancelar: `scancel` solo si `squeue --me -j <id>` dice que es un job
+  `photogram` propio.
 
 Desviaciones de la fase 1 respecto a este plan:
 - SQLite con `node:sqlite` (nativo de Node 22, como barranco-studio) en vez de
