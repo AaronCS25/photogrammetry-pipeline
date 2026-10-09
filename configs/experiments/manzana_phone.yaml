@@ -13,16 +13,13 @@
 #     GPS cierra el bucle alrededor de la manzana (spatial) sin vocab tree.
 #   - máscaras: SegFormer (en su dominio a nivel de calle) + SAM 3 solo para
 #     cables, con mosaico 3x2 (fotos de 4624 px).
-#   - georef por GPS del teléfono (error típico 3-5 m) y ROI automática: las
-#     cámaras rodean la manzana, así que la mediana cámara->centro es un buen
-#     radio. height_m explícito: por defecto llegaría solo hasta la cámara
-#     más alta (~1.5 m) y cortaría las fachadas.
+#   - georef SIN GPS (plane): solo endereza; el GPS del teléfono no es fiable.
 #   - refinado "dieta" (scales 1, resolution-level 2, decimate 0.7) para caber
 #     en 64G con 600 fotos; si falla, el pipeline sigue con la malla sin refinar.
 
 experiment:
   name: phone_v1
-  notes: "Captura a pie con intervalo (POCO 16MP, GPS). SegFormer + SAM3 cables (mosaico 3x2), sequential+spatial, georef GPS + ROI auto."
+  notes: "Captura a pie con intervalo (POCO 16MP, GPS). SegFormer + SAM3 cables (mosaico 3x2), sequential+spatial, georef plane (sin GPS, sin ROI)."
 
 frames:
   resize: null
@@ -68,16 +65,16 @@ colmap:
 
 georef:
   enabled: true
-  alignment_type: enu
-  max_error_m: 5.0                 # GPS de teléfono
-  ground_below_min_camera_m: 1.5   # teléfono a la altura del pecho
+  alignment_type: plane            # SIN GPS: endereza por el plano principal
+  # (Z arriba, suelo en z~0). El GPS de la app de cámara se actualiza cada
+  # ~45 s con posiciones cacheadas y saltos de 250 m: alinear con él dio un
+  # marco falso. Sin GPS no hay escala métrica ni ubicación en el mapa; si
+  # algún día se graba la ruta con una app GPS (GPX), cambiar a enu +
+  # reference_file.
+  ground_below_min_camera_m: 1.5
   center_source: phone
   roi:
-    enabled: true
-    radius_m: null                 # mediana cámara->centro x factor
-    radius_factor: 1.1
-    below_m: 2.0
-    height_m: 20
+    enabled: false                 # requiere marco métrico
 
 openmvs:
   densify:
