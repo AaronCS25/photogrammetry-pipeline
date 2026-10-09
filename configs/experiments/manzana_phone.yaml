@@ -1,0 +1,95 @@
+# Manzana capturada A PIE con el teléfono (POCO X6 5G, 16 MP, GPS en EXIF),
+# disparo por intervalo ~1 s caminando por la vereda de enfrente: 450-650
+# fotos por manzana, 1 foto por metro. Preset genérico: se pasa la escena por
+# CLI (una escena por manzana).
+#
+# Escena: datasets/raw/<manzana>/phone/*.jpg  (+ phone_v/ con las verticales:
+# tienen los píxeles rotados y COLMAP exige dimensiones iguales por carpeta)
+#
+#   ./slurm/submit.sh configs/experiments/manzana_phone.yaml manzana_01
+#
+# Decisiones:
+#   - matching [sequential, spatial]: la caminata es ordenada (sequential) y el
+#     GPS cierra el bucle alrededor de la manzana (spatial) sin vocab tree.
+#   - máscaras: SegFormer (en su dominio a nivel de calle) + SAM 3 solo para
+#     cables, con mosaico 3x2 (fotos de 4624 px).
+#   - georef por GPS del teléfono (error típico 3-5 m) y ROI automática: las
+#     cámaras rodean la manzana, así que la mediana cámara->centro es un buen
+#     radio. height_m explícito: por defecto llegaría solo hasta la cámara
+#     más alta (~1.5 m) y cortaría las fachadas.
+#   - refinado "dieta" (scales 1, resolution-level 2, decimate 0.7) para caber
+#     en 64G con 600 fotos; si falla, el pipeline sigue con la malla sin refinar.
+
+experiment:
+  name: phone_v1
+  notes: "Captura a pie con intervalo (POCO 16MP, GPS). SegFormer + SAM3 cables (mosaico 3x2), sequential+spatial, georef GPS + ROI auto."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [segformer, sam3]
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky, vegetation, pole]
+  dilate_px: 15
+  apply_to_dense: true
+  apply_to_texture: true
+  backends:
+    segformer:
+      inference_size: 1024
+    sam3:
+      prompts: [power line, electric cable, wire]
+      score_threshold: 0.5
+      tiles: [3, 2]
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 3200
+    max_num_features: 12288
+    extra_args:
+      SiftExtraction.estimate_affine_shape: 1
+      SiftExtraction.domain_size_pooling: 1
+      SiftExtraction.num_threads: 8        # afín+DSP en CPU: sin esto, OOM
+  matcher:
+    methods: [sequential, spatial]
+    sequential_overlap: 20                 # ~20 m de caminata
+    extra_args:
+      SiftMatching.guided_matching: 1
+  mapper:
+    extra_args:
+      Mapper.abs_pose_min_num_inliers: 20
+      Mapper.min_num_matches: 10
+  undistort:
+    max_image_size: 3200
+
+georef:
+  enabled: true
+  alignment_type: enu
+  max_error_m: 5.0                 # GPS de teléfono
+  ground_below_min_camera_m: 1.5   # teléfono a la altura del pecho
+  center_source: phone
+  roi:
+    enabled: true
+    radius_m: null                 # mediana cámara->centro x factor
+    radius_factor: 1.1
+    below_m: 2.0
+    height_m: 20
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    decimate: 0.7
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 1
+    extra_args:
+      resolution-level: 2
+  texture:
+    extra_args:
+      empty-color: 8421504
