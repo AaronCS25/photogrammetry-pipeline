@@ -314,7 +314,9 @@ def run_georef(ctx: Context) -> None:
 
     def align(kind: str) -> None:
         cmd = ["colmap", "model_aligner", "--input_path", source_model,
-               "--output_path", aligned, "--alignment_type", kind]
+               "--output_path", aligned, "--alignment_type", kind,
+               # COLMAP 3.11 lo exige (> 0) para CUALQUIER tipo, también 'plane'
+               "--alignment_max_error", str(gcfg.get("max_error_m", 3.0))]
         if kind == "enu":
             min_common = int(gcfg.get("min_common_images", 3))
             if ref_path is not None:
@@ -340,8 +342,7 @@ def run_georef(ctx: Context) -> None:
                                    "lon": refs[0][2], "alt": refs[0][3]},
             })
             cmd += ["--ref_images_path", refs_file, "--ref_is_gps", "1",
-                    "--min_common_images", str(min_common),
-                    "--alignment_max_error", str(gcfg.get("max_error_m", 3.0))]
+                    "--min_common_images", str(min_common)]
         run_cmd(cmd, log)
         if not (aligned / "images.bin").is_file():
             raise CommandError(f"model_aligner ({kind}) no produjo un modelo en {aligned}")
