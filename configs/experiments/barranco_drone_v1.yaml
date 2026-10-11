@@ -1,0 +1,16 @@
+experiment:
+  name: barranco_drone_v1
+  notes: "Primer run real: dron 4K60 3:16, 2 fps, lado mayor 1920."
+
+frames:
+  fps: 2
+  resize: {long_edge: 1920}
+
+colmap:
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 20
+
+openmvs:
+  densify:
+    resolution_level: 1

@@ -1,0 +1,21 @@
+experiment:
+  name: utec_escaleras_v1
+  notes: "Escalera interior UTEC, descenso 5to piso a base, 1010 fotos verticales. Sequential puro: sin spatial (GPS interior) ni vocab_tree (pisos repetitivos = falsos bucles)."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+colmap:
+  camera_model: OPENCV
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 20
+  undistort:
+    max_image_size: 2400
+
+openmvs:
+  densify:
+    resolution_level: 1

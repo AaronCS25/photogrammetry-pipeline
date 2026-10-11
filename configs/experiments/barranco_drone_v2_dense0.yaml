@@ -1,0 +1,16 @@
+experiment:
+  name: barranco_drone_v2_dense0
+  notes: "v2: igual que v1 pero denso a resolución completa (resolution_level 0)."
+
+frames:
+  fps: 2
+  resize: {long_edge: 1920}
+
+colmap:
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 20
+
+openmvs:
+  densify:
+    resolution_level: 0

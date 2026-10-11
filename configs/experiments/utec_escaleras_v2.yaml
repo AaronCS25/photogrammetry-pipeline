@@ -1,0 +1,31 @@
+experiment:
+  name: utec_escaleras_v2_sift
+  notes: "v2: SIFT reforzado para interior de baja textura (affine shape, DSP, peak 0.004, 16k features, guided matching, overlap 30). 8 hilos por RAM."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 2400
+    max_num_features: 16384
+    extra_args:
+      SiftExtraction.estimate_affine_shape: 1
+      SiftExtraction.domain_size_pooling: 1
+      SiftExtraction.peak_threshold: 0.004
+      SiftExtraction.num_threads: 8
+  matcher:
+    methods: [sequential]
+    sequential_overlap: 30
+    extra_args:
+      SiftMatching.guided_matching: 1
+  undistort:
+    max_image_size: 2400
+
+openmvs:
+  densify:
+    resolution_level: 1
