@@ -155,8 +155,12 @@ repetir el sparse: `--from-stage georef --force` (borrando antes `mvs/` y
 | `mesh.decimate` | `1.0` | Factor de decimación (0.5 = mitad de caras). |
 | `refine.enabled` | `true` | RefineMesh (mejora detalle; costoso). Desactivar en pruebas. |
 | `refine.scales` | `2` | Nº de escalas del refinamiento. |
-| `texture.enabled` | `true` | TextureMesh sobre la malla (refinada si existe). |
+| `clean.enabled` | `false` | Etapa `clean` (entre `mesh` y `texture`): limpia la malla antes de texturizarla. Iterar con `--from-stage clean --force` (minutos, sin densificar). |
+| `clean.min_component` | `0.02` | Descarta componentes conexas con menos caras que esta fracción de la mayor (piezas flotantes). `>1` = nº de caras absoluto; `0` = no. |
+| `clean.close_holes` / `clean.smooth` / `clean.decimate` | `100` / `2` / `1.0` | Cierre de huecos (aristas máximas), iteraciones de suavizado laplaciano y fracción de caras a conservar, vía `ReconstructMesh --mesh-file`. `edge_length` remalla a esa arista media. |
+| `texture.enabled` | `true` | TextureMesh sobre la malla limpia si `clean` está activa; si no, la refinada; si no, la base. |
 | `texture.export_type` | `obj` | `obj` \| `ply` \| `glb`. |
+| `texture.inpaint` | `false` | Rellena por difusión las zonas del atlas sin vista (TextureMesh las pinta de `empty-color`; con `inpaint` se usa magenta salvo que se fije otro). Determinista, sin IA: adecuado para paredes lisas; no inventa detalle. |
 | `*.extra_args` | `{}` | Cualquier flag de la herramienta, ej. `{number-views-fuse: 3}`. |
 
 ## `runtime`

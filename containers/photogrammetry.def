@@ -26,6 +26,11 @@ From: base.sif
     J=8
     CUDA_ARCHS="75;80;86"
 
+    # Etapa 'clean' (componentes conexas, PLY) y relleno del atlas: numpy + PIL
+    apt-get update
+    apt-get install -y --no-install-recommends python3-numpy python3-pil
+    rm -rf /var/lib/apt/lists/*
+
     mkdir -p /opt/src
     cd /opt/src
 
@@ -53,7 +58,7 @@ From: base.sif
     command -v ffmpeg
     command -v colmap
     command -v python3
-    python3 -c "import yaml"
+    python3 -c "import yaml, numpy, PIL"
     test -x /usr/local/bin/OpenMVS/DensifyPointCloud
     test -x /usr/local/bin/OpenMVS/ReconstructMesh
     test -x /usr/local/bin/OpenMVS/RefineMesh

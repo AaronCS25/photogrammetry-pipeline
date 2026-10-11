@@ -133,6 +133,15 @@ def run_metrics(ctx: Context, timings: dict[str, float],
         except json.JSONDecodeError:
             pass
 
+    # Limpieza de malla y relleno del atlas (si dejaron reporte)
+    for key in ("clean_info", "inpaint_info"):
+        path = ctx.metrics_dir / f"{key}.json"
+        if path.is_file():
+            try:
+                metrics[key.replace("_info", "")] = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+
     # Georreferenciación (si la etapa georef dejó su reporte)
     georef_file = ctx.metrics_dir / "georef_info.json"
     if (ctx.cfg.get("georef") or {}).get("enabled") and georef_file.is_file():
@@ -192,6 +201,7 @@ def run_metrics(ctx: Context, timings: dict[str, float],
     for label, path in {
         "openmvs_mesh": ctx.mvs_dir / "scene_mesh.ply",
         "openmvs_mesh_refined": ctx.mvs_dir / "scene_mesh_refined.ply",
+        "openmvs_mesh_clean": ctx.mvs_dir / "scene_mesh_clean.ply",
         "colmap_poisson": ctx.colmap_dir / "dense" / "meshed_poisson.ply",
         "colmap_delaunay": ctx.colmap_dir / "dense" / "meshed_delaunay.ply",
     }.items():
@@ -207,6 +217,7 @@ def run_metrics(ctx: Context, timings: dict[str, float],
         "colmap_fused_ply": fused,
         "mesh_ply": ctx.mvs_dir / "scene_mesh.ply",
         "mesh_refined_ply": ctx.mvs_dir / "scene_mesh_refined.ply",
+        "mesh_clean_ply": ctx.mvs_dir / "scene_mesh_clean.ply",
         "texture_obj": ctx.mvs_dir / "scene_texture.obj",
         "texture_ply": ctx.mvs_dir / "scene_texture.ply",
         "scene_mvs": ctx.mvs_dir / mvs_mod.SCENE,

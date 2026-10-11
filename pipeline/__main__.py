@@ -20,13 +20,14 @@ from . import masks as masks_mod
 from . import sfm as sfm_mod
 from . import georef as georef_mod
 from . import mvs as mvs_mod
+from . import clean as clean_mod
 from .metrics import run_metrics
 from .report import run_report
 from .previews import run_previews
 
 # Orden canónico de etapas
 STAGE_ORDER = ["frames", "telemetry", "masks", "sfm", "georef", "undistort",
-               "dense", "mesh", "texture", "metrics"]
+               "dense", "mesh", "clean", "texture", "metrics"]
 
 # Etapas que puede ejecutar el contenedor de segmentación (subcomando pre-masks)
 PRE_MASK_STAGES = ["frames", "telemetry", "masks"]
@@ -37,10 +38,12 @@ def _stage_functions(ctx: Context) -> dict:
     if backend == "openmvs":
         dense_fn = lambda: mvs_mod.run_densify(ctx)
         mesh_fn = lambda: mvs_mod.run_mesh(ctx)
+        clean_fn = lambda: clean_mod.run_clean(ctx)
         texture_fn = lambda: mvs_mod.run_texture(ctx)
     elif backend == "colmap":
         dense_fn = lambda: sfm_mod.run_colmap_dense(ctx)
         mesh_fn = lambda: sfm_mod.run_colmap_mesher(ctx)
+        clean_fn = lambda: print("[clean] backend colmap: sin etapa de limpieza")
         texture_fn = lambda: print("[texture] backend colmap: sin etapa de texturizado")
     else:
         raise ConfigError(f"dense.backend no soportado: {backend} (usar openmvs o colmap)")
@@ -54,6 +57,7 @@ def _stage_functions(ctx: Context) -> dict:
         "undistort": lambda: sfm_mod.run_undistort(ctx),
         "dense": dense_fn,
         "mesh": mesh_fn,
+        "clean": clean_fn,
         "texture": texture_fn,
     }
 
@@ -244,6 +248,17 @@ def cmd_validate(args: argparse.Namespace) -> int:
         elif str(gcfg.get("alignment_type", "enu")).lower() == "enu":
             print("  (requiere GPS en el EXIF de al menos "
                   f"{gcfg.get('min_common_images', 3)} imágenes registradas)")
+
+    ccfg = (cfg.get("openmvs") or {}).get("clean") or {}
+    tcfg = (cfg.get("openmvs") or {}).get("texture") or {}
+    if ccfg.get("enabled") or tcfg.get("inpaint"):
+        parts = []
+        if ccfg.get("enabled"):
+            parts.append(f"componentes >= {ccfg.get('min_component', 0)} | huecos {ccfg.get('close_holes', 0)} | "
+                         f"suavizado {ccfg.get('smooth', 0)} | decimación {ccfg.get('decimate', 1.0)}")
+        if tcfg.get("inpaint"):
+            parts.append("relleno del atlas (inpaint)")
+        print("\nLimpieza de malla: " + " | ".join(parts))
 
     print("\nBinarios en PATH:")
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):

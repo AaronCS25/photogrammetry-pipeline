@@ -220,10 +220,28 @@ openmvs:
     enabled: true
     scales: 2
     extra_args: {}               # ej: {max-face-area: 32}
+  # Limpieza de la malla ANTES de texturizar (OFF por defecto). Quita piezas
+  # sueltas, cierra huecos, suaviza y decima; TextureMesh texturiza la malla
+  # limpia con las fotos originales. Iterar: --from-stage clean --force.
+  clean:
+    enabled: false
+    min_component: 0.02          # descarta componentes con menos caras que esta
+                                 #   fracción de la mayor (>1 = nº de caras absoluto; 0 = no)
+    close_holes: 100             # tamaño máximo de hueco a cerrar (aristas); 0 = no
+    smooth: 2                    # iteraciones de suavizado laplaciano; 0 = no
+    decimate: 1.0                # fracción de caras a conservar (0.5 = mitad)
+    remove_spurious: 0           # como mesh.remove-spurious; 0 = no repetir
+    edge_length: 0               # remallado isotrópico a esta arista media; 0 = no
+    extra_args: {}               # otros flags de ReconstructMesh
   texture:
     enabled: true
     export_type: obj             # obj | ply | glb
-    extra_args: {}               # ej: {decimate: 0.5}
+    # inpaint: rellena por difusión las zonas del atlas sin vista (caras que
+    # ninguna foto cubre: detrás de autos, huecos cerrados por clean). Pinta
+    # esas caras de magenta (empty-color) y luego las rellena desde el borde.
+    inpaint: false
+    inpaint_tolerance: 24        # distancia máxima al color de relleno (por canal)
+    extra_args: {}               # ej: {decimate: 0.5, empty-color: 8421504}
 
 # -----------------------------------------------------------------------------
 # Métricas y runtime

@@ -20,10 +20,12 @@ SCENE_DENSE = "scene_dense.mvs"
 SCENE_MESH = "scene_mesh.mvs"
 SCENE_MESH_REFINED = "scene_mesh_refined.mvs"
 SCENE_TEXTURE = "scene_texture.mvs"
+SCENE_MESH_CLEAN = "scene_mesh_clean.mvs"   # etapa clean (ReconstructMesh --mesh-file)
 # Las herramientas de malla escriben el resultado como PLY derivado del -o;
 # la escena de entrada sigue siendo scene_dense.mvs + --mesh-file <ply>.
 MESH_PLY = "scene_mesh.ply"
 MESH_REFINED_PLY = "scene_mesh_refined.ply"
+MESH_CLEAN_PLY = "scene_mesh_clean.ply"
 
 
 def _cuda_args(ctx: Context) -> list[str]:
@@ -157,14 +159,23 @@ def run_texture(ctx: Context) -> None:
     if not tcfg.get("enabled", True):
         print("[texture] openmvs.texture.enabled = false: etapa omitida")
         return
-    # Usar la malla refinada si existe; si no, la malla base
+    # Malla a texturizar: la limpia (etapa clean, si está activa), si no la
+    # refinada, si no la base
+    from .clean import clean_enabled, inpaint_atlases, parse_empty_color
+    candidates = [MESH_REFINED_PLY, MESH_PLY]
+    if clean_enabled(ctx):
+        if not (ctx.mvs_dir / MESH_CLEAN_PLY).is_file():
+            raise CommandError(f"openmvs.clean.enabled=true pero falta {MESH_CLEAN_PLY}: "
+                               "ejecutar la etapa 'clean'.")
+        candidates.insert(0, MESH_CLEAN_PLY)
     mesh_file = None
-    for candidate in (MESH_REFINED_PLY, MESH_PLY):
+    for candidate in candidates:
         if (ctx.mvs_dir / candidate).is_file():
             mesh_file = candidate
             break
     if mesh_file is None:
         raise CommandError(f"No hay malla en {ctx.mvs_dir}; ¿se ejecutó la etapa 'mesh'?")
+    print(f"[texture] malla: {mesh_file}")
 
     cmd = [
         "TextureMesh",
@@ -184,12 +195,20 @@ def run_texture(ctx: Context) -> None:
         cmd += ["--ignore-mask-label", "0"]
         print(f"[texture] enmascaramiento activo en el texturizado ({linked} máscaras enlazadas)")
     cmd += _cuda_args(ctx)
-    cmd += extra_args_to_cli(tcfg.get("extra_args"))
+    user_args = tcfg.get("extra_args") or {}
+    # Relleno del atlas: las caras sin vista se pintan de un color plano que
+    # luego se rellena por difusión. Magenta por defecto para que ningún píxel
+    # real se confunda con "vacío" (con gris, el pavimento se parecería).
+    inpaint = bool(tcfg.get("inpaint"))
+    empty_color = user_args.get("empty-color")
+    if inpaint and empty_color is None:
+        empty_color = 16711935                      # 0xFF00FF
+        cmd += ["--empty-color", str(empty_color)]
+    cmd += extra_args_to_cli(user_args)
 
     # OpenMVS 2.3.0 se cae (segfault al guardar) cuando la textura cabe en UN
     # solo atlas: observado en todas las mallas pequeñas, nunca con >= 2 atlas.
     # Reintentos: forzar varios atlas más chicos y, en último caso, otro formato.
-    user_args = tcfg.get("extra_args") or {}
     attempts: list[tuple[str, list[str]]] = [("configuración original", cmd)]
     if "max-texture-size" not in user_args:
         for size in (4096, 2048):
@@ -205,9 +224,20 @@ def run_texture(ctx: Context) -> None:
             _run(ctx, attempt, "texture.log")
             if i > 0:
                 print(f"[texture] completado con el reintento '{label}'")
-            return
+            break
         except CommandError as exc:
             if i == len(attempts) - 1:
                 raise
             print(f"[texture] AVISO: TextureMesh falló con '{label}' "
                   f"({str(exc).splitlines()[0]}); reintentando con '{attempts[i + 1][0]}'")
+
+    if inpaint:
+        import json
+        report = inpaint_atlases(ctx.mvs_dir, parse_empty_color(empty_color),
+                                 int(tcfg.get("inpaint_tolerance", 24)))
+        filled = {k: v for k, v in report.items() if v > 0}
+        print(f"[texture] relleno del atlas: {len(filled)}/{len(report)} atlas con zonas vacías "
+              f"({', '.join(f'{k}: {v:.1%}' for k, v in filled.items()) or 'ninguna'})")
+        ctx.metrics_dir.mkdir(parents=True, exist_ok=True)
+        with open(ctx.metrics_dir / "inpaint_info.json", "w", encoding="utf-8") as fh:
+            json.dump({"empty_color": int(empty_color), "atlases": report}, fh, indent=2)

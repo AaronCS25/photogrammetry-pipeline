@@ -87,6 +87,11 @@ openmvs:
     scales: 1
     extra_args:
       resolution-level: 2
+  clean:
+    enabled: true
+    min_component: 0.02         # piezas flotantes (fotos a otra distancia tras obstáculos)
+    close_holes: 100            # huecos de árboles/autos: parche que continúa la pared
+    smooth: 3                   # quita el "grano" de las paredes
+    decimate: 0.5               # mitad de caras: misma forma, modelo manejable
   texture:
-    extra_args:
-      empty-color: 8421504
+    inpaint: true               # el parche de los huecos se rellena desde el borde
