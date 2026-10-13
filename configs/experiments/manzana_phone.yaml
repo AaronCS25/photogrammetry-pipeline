@@ -29,7 +29,7 @@ telemetry:
 
 masking:
   enabled: true
-  backend: [segformer, sam3]
+  backend: [segformer, sam3, wires]
   classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky, vegetation, pole]
   dilate_px: 15
   apply_to_dense: true
@@ -41,6 +41,7 @@ masking:
       prompts: [power line, electric cable, wire]
       score_threshold: 0.5
       tiles: [3, 2]
+    wires: {}                 # detector clásico de cables con los valores por defecto
 
 colmap:
   camera_model: OPENCV

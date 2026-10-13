@@ -126,6 +126,22 @@ masking:
       # dilate_px: 25        # opcional: los cables agradecen más margen
     manual:
       dir: mask_overrides     # relativo a datasets/raw/<escena>/ (o ruta absoluta)
+    # Detector clásico de cables (sin red): líneas finas, oscuras, rectas y
+    # largas. Complementa a sam3 con cables de poco contraste sobre fachadas.
+    # Encadenar: backend: [segformer, sam3, wires]. ~1 s/imagen con OpenCV.
+    wires:
+      work_width: 1600        # ancho de trabajo (px); los cables quedan de 1-3 px
+      tophat_px: 7            # grosor máximo (px de trabajo) de lo que cuenta como línea
+      min_contrast: 12        # contraste mínimo (0-255) frente al fondo
+      segment_px: 41          # longitud del segmento de la respuesta de línea
+      orientations: 24        # direcciones evaluadas en 180°
+      max_angle_deg: 60       # solo líneas a <= este ángulo de la horizontal (rejas y postes quedan fuera)
+      min_line: 8.0           # respuesta mínima de línea
+      anisotropy: 2.5         # respuesta en la mejor dirección / media de todas (follaje ~1)
+      min_length: 0.05        # longitud mínima de cada trazo (fracción de work_width)
+      max_thickness_px: 5     # área / longitud máxima (descarta manchas)
+      bright: false           # true: también líneas claras sobre fondo oscuro (más falsos positivos)
+      # dilate_px: 15        # opcional: sobreescribe masking.dilate_px solo aquí
 
 # -----------------------------------------------------------------------------
 # Etapa 3-4: COLMAP (Structure-from-Motion sparse + undistort)

@@ -24,6 +24,7 @@ KNOWN_BACKENDS = {
     "segformer": ".segformer",   # SegFormer-B5 Cityscapes: clases urbanas estándar
     "sam3": ".sam3",             # SAM 3: prompts de texto libre (cables, postes...)
     "manual": ".manual",         # PNGs pintados a mano en datasets/raw/<escena>/mask_overrides/
+    "wires": ".wires",           # detector clásico de cables (líneas finas oscuras), sin red
 }
 
 
