@@ -240,7 +240,7 @@ openmvs:
     # ninguna foto cubre: detrás de autos, huecos cerrados por clean). Pinta
     # esas caras de magenta (empty-color) y luego las rellena desde el borde.
     inpaint: false
-    inpaint_tolerance: 24        # distancia máxima al color de relleno (por canal)
+    inpaint_tolerance: 24        # sensibilidad de la detección del color de relleno (24 = cubre el halo JPEG)
     extra_args: {}               # ej: {decimate: 0.5, empty-color: 8421504}
 
 # -----------------------------------------------------------------------------

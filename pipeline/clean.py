@@ -266,36 +266,69 @@ def parse_empty_color(value) -> tuple[int, int, int]:
     return (v >> 16) & 255, (v >> 8) & 255, v & 255
 
 
-def inpaint_image(img, color: tuple[int, int, int], tolerance: int = 24,
-                  scale: int = 8, max_iter: int = 2000):
-    """Rellena los píxeles ~color por difusión desde el borde (piramidal: se
-    propaga a 1/scale de resolución, se reescala y se mezcla). -> (array, fracción)."""
+def _down2(a):
+    """Media 2x2 (relleno con ceros si la dimensión es impar)."""
+    import numpy as np
+    if a.shape[0] % 2:
+        a = np.concatenate([a, np.zeros_like(a[:1])], axis=0)
+    if a.shape[1] % 2:
+        a = np.concatenate([a, np.zeros_like(a[:, :1])], axis=1)
+    return (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2]) * 0.25
+
+
+def _up_to(a, shape):
+    """Reescala (bilineal) un array float (h, w[, c]) al tamaño shape = (h, w)."""
     import numpy as np
     from PIL import Image
+    h, w = shape
+    if a.ndim == 2:
+        return np.asarray(Image.fromarray(a, mode="F").resize((w, h), Image.BILINEAR))
+    return np.stack([np.asarray(Image.fromarray(np.ascontiguousarray(a[..., c]), mode="F")
+                                .resize((w, h), Image.BILINEAR)) for c in range(a.shape[2])], axis=2)
+
+
+def inpaint_image(img, color: tuple[int, int, int], tolerance: int = 24, dilate: int = 2):
+    """Rellena los píxeles ~color con el color del entorno (pull-push piramidal,
+    ponderado solo por píxeles conocidos: el color vacío nunca se mezcla en el
+    relleno). `dilate` amplía la máscara unos px para cubrir el halo JPEG.
+    -> (array, fracción de píxeles vacíos)."""
+    import numpy as np
 
     arr = np.asarray(img.convert("RGB"))
-    mask = (np.abs(arr.astype(np.int16) - np.array(color, dtype=np.int16)) <= tolerance).all(axis=2)
+    a16 = arr.astype(np.int16)
+    if tuple(color) == (255, 0, 255):
+        # Magenta (por defecto): detección por tono, min(R,B) - G, que capta
+        # también el halo que deja la compresión JPEG en el borde de cada zona
+        # (una mezcla al 50 % con una pared clara sigue dando > 100).
+        mask = (np.minimum(a16[..., 0], a16[..., 2]) - a16[..., 1]) >= 255 - 5 * tolerance
+    else:
+        mask = (np.abs(a16 - np.array(color, dtype=np.int16)) <= tolerance).all(axis=2)
     frac = float(mask.mean())
     if frac == 0.0 or frac > 0.98:
         return arr, frac
-    h, w = mask.shape
-    sw, sh = max(1, w // scale), max(1, h // scale)
-    small = np.asarray(Image.fromarray(arr).resize((sw, sh), Image.BILINEAR)).astype(np.float32)
-    smask = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).resize((sw, sh), Image.BILINEAR)) > 64
-    valid = ~smask
-    for _ in range(max_iter):               # cada vuelta llena un anillo de píxeles
-        if valid.all():
-            break
-        acc = np.zeros_like(small); cnt = np.zeros(smask.shape, dtype=np.float32)
+    for _ in range(dilate):
+        grown = mask.copy()
         for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            sv = np.roll(valid, (dy, dx), axis=(0, 1)); sc = np.roll(small, (dy, dx), axis=(0, 1))
-            acc += sc * sv[..., None]; cnt += sv
-        fill = ~valid & (cnt > 0)
-        small[fill] = acc[fill] / cnt[fill][:, None]
-        valid |= fill
-    up = np.asarray(Image.fromarray(small.astype(np.uint8)).resize((w, h), Image.BILINEAR))
+            grown |= np.roll(mask, (dy, dx), axis=(0, 1))
+        mask = grown
+    # pull: pirámide de (color premultiplicado, peso) hasta que todo sea conocido
+    weight = (~mask).astype(np.float32)
+    premul = arr.astype(np.float32) * weight[..., None]
+    levels = [(premul, weight)]
+    while levels[-1][1].min() <= 0.0 and max(levels[-1][1].shape) > 1:
+        levels.append((_down2(levels[-1][0]), _down2(levels[-1][1])))
+    premul, weight = levels[-1]
+    known = weight > 0
+    fill = np.zeros_like(premul)
+    fill[known] = premul[known] / weight[known][:, None]
+    if not known.all():                      # imagen vacía casi por completo
+        fill[~known] = fill[known].mean(axis=0) if known.any() else 0.0
+    # push: cada nivel toma su valor conocido y completa con el nivel grueso
+    for premul, weight in reversed(levels[:-1]):
+        up = _up_to(fill, weight.shape)
+        fill = premul + up * (1.0 - weight)[..., None]
     out = arr.copy()
-    out[mask] = up[mask]
+    out[mask] = np.clip(fill[mask] + 0.5, 0, 255).astype(np.uint8)
     return out, frac
 
 

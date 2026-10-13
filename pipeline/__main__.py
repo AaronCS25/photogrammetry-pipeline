@@ -109,6 +109,12 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
         for stage in stages:
             if stage == "metrics":
                 continue  # siempre al final, fuera del sistema de marcadores
+            if stage == "masks" and restrict is None and args.force and runner.is_done(stage):
+                # Las máscaras solo las genera el contenedor de segmentación
+                # (pre-masks, que corre antes en el mismo job y ya aplicó --force).
+                print("[pipeline] etapa 'masks': ya generada por pre-masks, no se repite aquí")
+                runner.skipped.append(stage)
+                continue
             runner.run(stage, functions[stage])
         if "metrics" in stages and ctx.cfg.get("metrics", {}).get("enabled", True):
             run_metrics(ctx, runner.collected_timings(), runner.collected_stage_info())
