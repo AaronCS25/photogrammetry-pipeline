@@ -79,6 +79,9 @@ def read_ply_mesh(path: Path):
                 dtype = np.dtype([(p, "<" + t) for p, t in props])
                 vertices = np.frombuffer(fh.read(dtype.itemsize * count), dtype=dtype).copy()
             elif name == "face":
+                if count == 0:                # malla vacía: OpenMVS omite las propiedades
+                    faces = np.zeros((0, 3), dtype=np.int64)
+                    continue
                 if len(props) != 1 or not isinstance(props[0][1], tuple):
                     raise CommandError(f"PLY: elemento face no soportado ({props}) en {path}")
                 _, (_, cnt_t, idx_t) = props[0]
@@ -208,6 +211,10 @@ def run_clean(ctx: Context) -> None:
     current = source
     if min_component > 0:
         vertices, faces, face_dtype = read_ply_mesh(source)
+        if len(faces) == 0:
+            raise CommandError(
+                f"{source.name} no tiene caras: la densificación no produjo geometría "
+                "(normalmente porque el SfM registró muy pocas cámaras; ver [sfm] en el log).")
         vertices, faces, comp = keep_main_components(vertices, faces, min_fraction, min_faces)
         current = ctx.mvs_dir / MESH_COMPONENTS_PLY
         write_ply_mesh(current, vertices, faces, face_dtype)
