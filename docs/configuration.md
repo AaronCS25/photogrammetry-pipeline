@@ -94,6 +94,7 @@ segmentación antes del run principal.
 
 | Clave | Default | Descripción |
 |---|---|---|
+| `feature_extractor.camera_params_file` | `null` | JSON con los intrínsecos exactos (formato `camaras.json` de barranco-streetview: `views[*].fx/fy/cx/cy`, iguales en todas las vistas), relativo a `datasets/raw/<escena>/`. Se pasa como `ImageReader.camera_params`; con `PINHOLE` y `Mapper.ba_refine_focal_length: 0` COLMAP no reestima nada. Incompatible con `extra_args.ImageReader.camera_params`. |
 | `camera_model` | `OPENCV` | Modelo de cámara. `OPENCV` funciona bien para dron y teléfono. `OPENCV_FISHEYE` para action cams. |
 | `single_camera_per_source` | `true` | Una cámara compartida por subcarpeta (correcto cuando todos los videos de una fuente vienen del mismo dispositivo con zoom fijo). |
 | `feature_extractor.max_image_size` | `2400` | Reescalado interno para SIFT; subirlo mejora detalle y cuesta tiempo/VRAM. |

@@ -182,6 +182,16 @@ def cmd_validate(args: argparse.Namespace) -> int:
                   "wget https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin", file=sys.stderr)
             return 1
 
+    fe_cfg = (cfg.get("colmap") or {}).get("feature_extractor") or {}
+    if fe_cfg.get("camera_params_file"):
+        from .sfm import camera_params_from_file
+        try:
+            print(f"\nIntrínsecos fijos ({fe_cfg['camera_params_file']}): "
+                  f"{camera_params_from_file(ctx, fe_cfg)}")
+        except CommandError as exc:
+            print(f"\nERROR: {exc}", file=sys.stderr)
+            return 1
+
     mcfg = cfg.get("masking") or {}
     if mcfg.get("enabled"):
         from . import mask_backends

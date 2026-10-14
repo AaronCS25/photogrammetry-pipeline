@@ -114,6 +114,18 @@ de modelos, error de reproyección, tiempo.
    el contenedor por defecto (actualizar `containers/README.md`) o se mantiene
    como opción.
 
+## 4b. Extra para Street View: rigs (COLMAP 3.12+)
+
+Las vistas de un mismo panorama comparten centro óptico y sus rotaciones
+relativas son conocidas (heading/pitch en `camaras.json` e `indice.csv`).
+COLMAP 3.12+ modela esto como **rig** (`rigs.bin`/`frames.bin`): una pose por
+panorama y todas sus vistas la restringen a la vez, en vez de registrar cada
+vista como cámara suelta (hoy la cadena se corta: `sv_7c34`, 1 vista/pano,
+registró 4 de 36 aunque los pares vecinos tenían 170-318 inliers). Investigar
+`colmap rig_configurator` (o el JSON de configuración de rigs de 4.x) para
+declarar el rig a partir del export, como opción `colmap.rig_file`. Es el
+experimento más prometedor para Street View, después de ALIKED + LightGlue.
+
 ## 5. Criterio de éxito
 
 - `main` sigue intacto: los YAML actuales corren igual con el contenedor viejo.

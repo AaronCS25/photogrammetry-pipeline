@@ -47,9 +47,8 @@ colmap:
   feature_extractor:
     max_image_size: 1600
     max_num_features: 16384
+    camera_params_file: camaras.json              # fx, fy, cx, cy exactos del export (cy = 600)
     extra_args:
-      # fx, fy, cx, cy de camaras.json (cy = 600: la franja inferior no es imagen)
-      ImageReader.camera_params: "953.4028740753681,953.4028740753681,800,600"
       SiftExtraction.estimate_affine_shape: 1     # panoramas a ~10 m: cambio de
       SiftExtraction.domain_size_pooling: 1       # perspectiva grande entre vecinos
       # Afín + DSP extraen en CPU con un hilo por núcleo DEL NODO (no del job):

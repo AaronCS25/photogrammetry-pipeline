@@ -59,6 +59,38 @@ def _gpu_flag(ctx: Context, section: dict) -> str:
     return "1" if (ctx.gpu and section.get("use_gpu", True)) else "0"
 
 
+def camera_params_from_file(ctx: Context, fe: dict) -> str | None:
+    """`feature_extractor.camera_params_file`: JSON con los intrínsecos exactos
+    (formato camaras.json de barranco-streetview: views[*].fx/fy/cx/cy, todas
+    iguales) -> "fx,fy,cx,cy" para ImageReader.camera_params. None si no se usa."""
+    import json
+
+    name = fe.get("camera_params_file")
+    if not name:
+        return None
+    path = Path(name)
+    if not path.is_absolute():
+        path = ctx.raw_dir / path
+    if not path.is_file():
+        raise CommandError(f"feature_extractor.camera_params_file no existe: {path}")
+    if "ImageReader.camera_params" in (fe.get("extra_args") or {}):
+        raise CommandError("feature_extractor: usar camera_params_file O "
+                           "extra_args.ImageReader.camera_params, no ambos")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    views = data.get("views") if isinstance(data, dict) else None
+    if not views:
+        raise CommandError(f"{path}: se esperaba un JSON con la lista 'views' (fx, fy, cx, cy)")
+    keys = ("fx", "fy", "cx", "cy")
+    try:
+        params = {tuple(float(v[k]) for k in keys) for v in views}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CommandError(f"{path}: cada vista necesita fx, fy, cx, cy ({exc})")
+    if len(params) != 1:
+        raise CommandError(f"{path}: las vistas no comparten intrínsecos ({len(params)} "
+                           "combinaciones); una cámara por fuente exige los mismos en todas")
+    return ",".join(repr(v) for v in next(iter(params)))
+
+
 def run_sfm(ctx: Context) -> None:
     cfg = ctx.cfg["colmap"]
     log = ctx.logs_dir / "sfm.log"
@@ -94,6 +126,10 @@ def run_sfm(ctx: Context) -> None:
         require_masks(ctx)
         cmd += ["--ImageReader.mask_path", ctx.masks_dir]
         print("[sfm] enmascaramiento activo: features solo fuera de las máscaras")
+    params = camera_params_from_file(ctx, fe)
+    if params:
+        cmd += ["--ImageReader.camera_params", params]
+        print(f"[sfm] intrínsecos fijos desde {fe['camera_params_file']}: {params}")
     cmd += extra_args_to_cli(fe.get("extra_args"))
     breakdown["feature_extractor"] = round(run_cmd(cmd, log), 2)
 

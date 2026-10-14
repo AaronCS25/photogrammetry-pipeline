@@ -154,6 +154,10 @@ colmap:
     use_gpu: true
     max_image_size: 2400         # Reescala internamente para extraer features
     max_num_features: 8192
+    # Intrínsecos EXACTOS desde un JSON (relativo a datasets/raw/<escena>/), formato
+    # camaras.json de barranco-streetview (views[*].fx, fy, cx, cy iguales). Evita
+    # copiar focales a mano; equivale a extra_args.ImageReader.camera_params.
+    camera_params_file: null
     extra_args: {}               # ej: {SiftExtraction.estimate_affine_shape: 1}
 
   matcher:
