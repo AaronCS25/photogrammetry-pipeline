@@ -57,7 +57,11 @@ colmap:
     extra_args:
       Mapper.ba_refine_focal_length: 0            # intrínsecos conocidos: no tocarlos
       Mapper.ba_refine_extra_params: 0
-      Mapper.abs_pose_min_num_inliers: 20
+      # Entre panoramas vecinos hay 100-250 inliers, pero casi ningún punto se ve
+      # desde TRES posiciones (10 m entre ellas): el registro incremental se
+      # corta aunque el emparejamiento sea bueno. Umbrales de registro bajos.
+      Mapper.abs_pose_min_num_inliers: 12
+      Mapper.abs_pose_min_inlier_ratio: 0.1
       Mapper.min_num_matches: 10
 
 georef:
@@ -72,6 +76,8 @@ georef:
 openmvs:
   densify:
     resolution_level: 0           # imágenes pequeñas: resolución completa
+  refine:
+    enabled: false                # RefineMesh se quedó colgado >1 h con 22 vistas (job 56800); aporta poco aquí
   clean:
     enabled: true
     min_component: 0.02
