@@ -114,6 +114,42 @@ def reference_file_path(ctx: Context) -> Path | None:
     return path if path.is_absolute() else ctx.raw_dir / path
 
 
+def gpx_file_path(ctx: Context) -> Path | None:
+    """georef.gpx.file resuelto (relativo a la carpeta de la escena o absoluto)."""
+    gpx = (ctx.cfg.get("georef") or {}).get("gpx") or {}
+    ref = gpx.get("file")
+    if not ref:
+        return None
+    path = Path(str(ref))
+    return path if path.is_absolute() else ctx.raw_dir / path
+
+
+def positions_from_gpx(ctx: Context) -> tuple[Path, dict]:
+    """Interpola la posición de cada imagen de la BD sobre el track GPX (por
+    hora de captura del EXIF) y la escribe como CSV de referencia."""
+    from .gpx import gpx_positions
+
+    gcfg = (ctx.cfg.get("georef") or {}).get("gpx") or {}
+    gpx_path = gpx_file_path(ctx)
+    if gpx_path is None or not gpx_path.is_file():
+        raise CommandError(f"georef.gpx.file no existe: {gpx_path}")
+    names = db_image_names(database_path(ctx))
+    images = {n: ctx.frames_dir / n for n in names if (ctx.frames_dir / n).is_file()}
+    out_csv = ctx.metrics_dir / "gpx_positions.csv"
+    summary = gpx_positions(
+        gpx_path, images, out_csv,
+        utc_offset_h=float(gcfg.get("utc_offset_h", -5.0)),
+        time_shift_s=float(gcfg.get("time_shift_s", 0.0)),
+        max_gap_s=float(gcfg.get("max_gap_s", 5.0)))
+    print(f"[georef] GPX {summary['gpx']}: {summary['track_points']} puntos "
+          f"({summary['track_utc'][0]} a {summary['track_utc'][1]} UTC); "
+          f"{summary['positioned']}/{len(images)} fotos posicionadas "
+          f"(sin hora: {summary['without_time']}, fuera del track: {summary['outside_track']})")
+    if summary.get("warning"):
+        print(f"[georef] AVISO: {summary['warning']}")
+    return out_csv, summary
+
+
 def db_image_names(db_path: Path) -> list[str]:
     import sqlite3
 
@@ -311,6 +347,12 @@ def run_georef(ctx: Context) -> None:
     ref_path = reference_file_path(ctx)
     if ref_path is not None and not ref_path.is_file():
         raise CommandError(f"georef.reference_file no existe: {ref_path}")
+    if gpx_file_path(ctx) is not None:
+        if ref_path is not None:
+            raise CommandError("georef: usar gpx.file O reference_file, no ambos")
+        if alignment == "enu":
+            # Track GPX + hora de captura -> CSV de posiciones (mismo camino que reference_file)
+            ref_path, gps_info["gpx"] = positions_from_gpx(ctx)
 
     def align(kind: str) -> None:
         cmd = ["colmap", "model_aligner", "--input_path", source_model,

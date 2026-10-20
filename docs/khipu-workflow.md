@@ -121,6 +121,20 @@ Guía rápida de dimensionamiento:
 La T4 (16 GB) se queda corta para PatchMatch/Densify a resolución alta: para
 denso en 4K preferir `rtxa6000` o `a100`, o subir `resolution_level`.
 
+### Varias escenas con el mismo preset (lote)
+
+```bash
+for s in manzana_04 manzana_05 manzana_06; do
+  SBATCH_OPTS="--gres=shard:rtxa6000:8 --cpus-per-task=16 --mem=64G --time=0-8:00:00"     ./slurm/submit.sh configs/experiments/manzana_phone_geo.yaml $s
+done
+squeue --me
+```
+
+El QOS limita la memoria total por usuario (130 G): con 64 G por job corren dos
+a la vez y el resto espera en cola (`QOSMaxMemoryPerUser`), sin intervención.
+Validar cada escena antes (`pipeline validate`) evita descubrir un error de
+datos horas después.
+
 ## 8. Monitorear
 
 ```bash

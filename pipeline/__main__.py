@@ -258,9 +258,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
               f"(fallback plano: {'sí' if gcfg.get('fallback_plane', True) else 'no'}) | "
               f"centro: {gcfg.get('center_source') or 'todas las cámaras'} | ROI: {roi_txt}")
         ref_path = georef_mod.reference_file_path(ctx)
+        gpx_path = georef_mod.gpx_file_path(ctx)
         if ref_path is not None:
             print(f"  posiciones desde archivo: {ref_path} "
                   f"({'OK' if ref_path.is_file() else 'NO EXISTE'})")
+        if gpx_path is not None:
+            gpx_cfg = gcfg.get("gpx") or {}
+            print(f"  posiciones desde track GPX: {gpx_path} "
+                  f"({'OK' if gpx_path.is_file() else 'NO EXISTE'}) | zona horaria del teléfono "
+                  f"UTC{gpx_cfg.get('utc_offset_h', -5):+} | corrección {gpx_cfg.get('time_shift_s', 0)} s "
+                  f"| hueco máx. {gpx_cfg.get('max_gap_s', 5)} s")
+            if ref_path is not None:
+                print("  ERROR: usar gpx.file O reference_file, no ambos", file=sys.stderr)
+                return 1
         elif str(gcfg.get("alignment_type", "enu")).lower() == "enu":
             print("  (requiere GPS en el EXIF de al menos "
                   f"{gcfg.get('min_common_images', 3)} imágenes registradas)")

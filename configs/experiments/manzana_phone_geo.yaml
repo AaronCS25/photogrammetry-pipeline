@@ -1,0 +1,99 @@
+# Captura A PIE con intervalo + TRACK GPX. Igual que manzana_phone.yaml pero
+# con georreferenciación métrica: la app de registro GPS (GPS Logger, un punto
+# por segundo, iniciada antes de la primera foto y detenida después de la
+# última) exporta un .gpx que se sube como datasets/raw/<escena>/recorrido.gpx.
+# La posición de cada foto se interpola por su hora de captura (EXIF).
+#
+# Escena: datasets/raw/<escena>/phone/*.jpg (+ phone_v/ para verticales) y
+#         datasets/raw/<escena>/recorrido.gpx
+# Validar: apptainer exec containers/photogrammetry.sif python3 -m pipeline validate #            --config configs/experiments/manzana_phone_geo.yaml --scene <escena>
+# Lanzar:  SBATCH_OPTS="--gres=shard:rtxa6000:8 --cpus-per-task=16 --mem=64G --time=0-8:00:00" #            ./slurm/submit.sh configs/experiments/manzana_phone_geo.yaml <escena>
+# Varias manzanas: for s in manzana_04 manzana_05; do SBATCH_OPTS=... ./slurm/submit.sh ... $s; done
+#
+# Qué mirar en el log: "[georef] GPX recorrido.gpx: N puntos (... UTC); X/Y fotos
+# posicionadas" y "[georef] modelo métrico (ENU, metros), N cámaras". Si avisa
+# que las fotos caen fuera del track, ajustar georef.gpx.utc_offset_h o
+# time_shift_s y relanzar con --from-stage georef --force (minutos).
+
+experiment:
+  name: phone_geo_v1
+  notes: "Captura a pie con intervalo + track GPX (GPS Logger): georef ENU métrica por hora de captura. SegFormer + SAM3 + wires, clean + inpaint."
+
+frames:
+  resize: null
+
+telemetry:
+  enabled: false
+
+masking:
+  enabled: true
+  backend: [segformer, sam3, wires]
+  classes: [person, rider, car, truck, bus, motorcycle, bicycle, sky, vegetation, pole]
+  dilate_px: 15
+  apply_to_dense: true
+  apply_to_texture: true
+  backends:
+    segformer:
+      inference_size: 1024
+    sam3:
+      prompts: [power line, electric cable, wire]
+      score_threshold: 0.5
+      tiles: [3, 2]
+    wires: {}                 # detector clásico de cables con los valores por defecto
+
+colmap:
+  camera_model: OPENCV
+  feature_extractor:
+    max_image_size: 3200
+    max_num_features: 12288
+    extra_args:
+      SiftExtraction.estimate_affine_shape: 1
+      SiftExtraction.domain_size_pooling: 1
+      SiftExtraction.num_threads: 8        # afín+DSP en CPU: sin esto, OOM
+  matcher:
+    methods: [sequential, spatial]
+    sequential_overlap: 20                 # ~20 m de caminata
+    extra_args:
+      SiftMatching.guided_matching: 1
+  mapper:
+    extra_args:
+      Mapper.abs_pose_min_num_inliers: 20
+      Mapper.min_num_matches: 10
+  undistort:
+    max_image_size: 3200
+
+georef:
+  enabled: true
+  alignment_type: enu              # métrico: posiciones del track GPX por hora de captura
+  gpx:
+    file: recorrido.gpx            # datasets/raw/<escena>/recorrido.gpx (export de GPS Logger)
+    utc_offset_h: -5               # solo si el EXIF no trae OffsetTimeOriginal (el POCO sí lo trae)
+    time_shift_s: 0                # reloj del teléfono vs GPS; ajustar si georef_info lo sugiere
+    max_gap_s: 5
+  max_error_m: 5.0                 # GPS de consumo caminando: 3-5 m
+  min_common_images: 10
+  fallback_plane: true             # si el GPX falla, se endereza por plano (no métrico) y se avisa
+  ground_below_min_camera_m: 1.5
+  center_source: phone
+  roi:
+    enabled: false                 # con marco métrico se puede activar (radius_m) para recortar vecinos
+
+openmvs:
+  densify:
+    resolution_level: 1
+  mesh:
+    decimate: 0.7
+    extra_args:
+      remove-spurious: 40
+  refine:
+    scales: 1
+    extra_args:
+      resolution-level: 2
+  clean:
+    enabled: true
+    min_component: 0.02         # piezas flotantes (fotos a otra distancia tras obstáculos)
+    close_holes: 100            # huecos de árboles/autos: parche que continúa la pared
+    smooth: 3                   # quita el "grano" de las paredes
+    decimate: 0.5               # mitad de caras: misma forma, modelo manejable
+  texture:
+    inpaint: true               # el parche de los huecos se rellena desde el borde

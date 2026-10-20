@@ -69,9 +69,8 @@ georef:
   alignment_type: plane            # SIN GPS: endereza por el plano principal
   # (Z arriba, suelo en z~0). El GPS de la app de cámara se actualiza cada
   # ~45 s con posiciones cacheadas y saltos de 250 m: alinear con él dio un
-  # marco falso. Sin GPS no hay escala métrica ni ubicación en el mapa; si
-  # algún día se graba la ruta con una app GPS (GPX), cambiar a enu +
-  # reference_file.
+  # marco falso. Sin GPS no hay escala métrica ni ubicación en el mapa. Con la
+  # ruta grabada por una app GPS (GPX) usar manzana_phone_geo.yaml (georef.gpx).
   ground_below_min_camera_m: 1.5
   center_source: phone
   roi:

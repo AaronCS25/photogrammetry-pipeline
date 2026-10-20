@@ -1,7 +1,8 @@
-# Manzana desde Google Street View con UNA vista frontal por panorama
-# (export de barranco-streetview en modo `capture: single`, FOV 110°, ~10 m entre
-# panoramas). Variante "mínima" de streetview_manzana.yaml: pocas imágenes, sin
-# giros, para medir si un solapamiento del 30-60 % entre vecinos basta.
+# Manzana desde Google Street View con POCAS vistas por panorama (export de
+# barranco-streetview en modo `single` = 1 vista frontal, o `three` = centro +
+# conexión anterior/siguiente; FOV 110°, ~10 m entre panoramas). Resultados:
+# single 4/36 registradas; three 33/92 (los pares vecinos emparejan bien pero
+# casi ningún punto se ve desde 3 posiciones). Pendiente: SfM global / rigs.
 #
 # Subir SOLO esto del export (el resto, panoramas/ y ubicacion.png, se
 # convertiría en fuentes de imágenes espurias):
