@@ -1,0 +1,9 @@
+# Dependencias Python del pipeline (fuera de Khipu; en Khipu ya vienen en el contenedor).
+#   python3 -m pip install -r requirements.txt
+pyyaml>=6.0        # obligatorio: lectura de configs/*.yaml
+numpy>=1.24        # etapa clean, backend 'wires', relleno del atlas
+pillow>=9.0        # EXIF (georef GPX), previews, máscaras manuales, atlas
+# Opcional (acelera el backend de máscaras 'wires' ~10x; sin él usa numpy/PIL):
+#   opencv-python-headless>=4.8
+# Segmentación semántica (segformer / sam3): NO va aquí; requiere PyTorch con CUDA.
+# Ver containers/segmentation.def.

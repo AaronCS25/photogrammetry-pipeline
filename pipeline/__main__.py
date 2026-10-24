@@ -288,7 +288,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     print("\nBinarios en PATH:")
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):
-        status = shutil.which(binary) or "NO ENCONTRADO (ok si se ejecutará dentro del contenedor)"
+        status = shutil.which(binary) or "NO ENCONTRADO (normal fuera del contenedor; ver docs/ejecutar-fuera-de-khipu.md)"
         print(f"  {binary}: {status}")
 
     print("\n✔ Configuración válida.")

@@ -39,6 +39,18 @@ photogrammetry-pipeline/
 └── README.md
 ```
 
+> **Antes de empezar.** Este repositorio **no se ejecuta con solo clonarlo**:
+> el trabajo lo hacen COLMAP, OpenMVS y FFmpeg (C++ con CUDA), que no se
+> instalan con `pip`. Hay dos formas de tenerlos, y hay que elegir una:
+>
+> | Dónde | Cómo | Guía |
+> |---|---|---|
+> | **Khipu** (lo habitual) | contenedor Apptainer + SLURM, nada que instalar | sección siguiente y [docs/khipu-workflow.md](docs/khipu-workflow.md) |
+> | **Tu laptop / PC** (Linux o Windows+WSL2, GPU NVIDIA) | imagen Docker idéntica al contenedor de Khipu | [docs/ejecutar-fuera-de-khipu.md](docs/ejecutar-fuera-de-khipu.md) |
+>
+> En ambos casos el primer comando es `validate`: te dice qué falta antes de
+> gastar cómputo.
+
 ## Inicio rápido (en Khipu)
 
 ```bash
@@ -136,13 +148,41 @@ archivos y tiempo de pared por etapa. `python3 -m pipeline report` genera
 `outputs/experiments_summary.csv` para comparar experimentos (ideal para las
 tablas de la tesis).
 
+## Ejecutar fuera de Khipu (laptop / PC)
+
+Guía paso a paso, sin asumir nada instalado:
+[docs/ejecutar-fuera-de-khipu.md](docs/ejecutar-fuera-de-khipu.md). Resumen:
+
+```bash
+# 1. Docker (+ NVIDIA Container Toolkit en Linux; Docker Desktop en Windows/WSL2)
+# 2. Clonar; 3. construir la imagen UNA vez (~1-2 h, mismas versiones que Khipu)
+docker build -t photogrammetry:local -f containers/Dockerfile .
+# 4. Datos en datasets/raw/<escena>/ ; 5. validar ; 6. ejecutar
+./containers/docker-run.sh python3 -m pipeline validate --config configs/experiments/quick_test.yaml --scene <escena>
+./containers/docker-run.sh python3 -m pipeline run      --config configs/experiments/quick_test.yaml --scene <escena>
+```
+
+Sin Docker, el pipeline necesita `ffmpeg`, `colmap` (3.11, con CUDA) y los
+binarios de OpenMVS 2.3 en el PATH, más `python3 -m pip install -r requirements.txt`.
+El `colmap` de `apt` (3.7, sin CUDA) no sirve.
+
 ## Documentación
 
 - [docs/khipu-workflow.md](docs/khipu-workflow.md) — flujo completo en Khipu (SLURM, particiones, shards de GPU, transferencia de archivos).
 - [docs/configuration.md](docs/configuration.md) — referencia de cada parámetro + recetas (2 fps a 1080p, multi-fuente, loop detection, comparación OpenMVS vs COLMAP denso).
 - [containers/README.md](containers/README.md) — construcción y mantenimiento de la imagen Apptainer.
+- [docs/ejecutar-fuera-de-khipu.md](docs/ejecutar-fuera-de-khipu.md) — correr en una laptop/PC con Docker (Linux o Windows+WSL2), sin SLURM.
 
 ## Requisitos
 
-- En Khipu: solo Apptainer y SLURM (ya instalados). Nada que instalar como usuario.
-- Local (opcional, para probar sin cluster): `ffmpeg`, `colmap`, OpenMVS y `python3` + `pyyaml` en el PATH.
+| Componente | En Khipu | En tu máquina |
+|---|---|---|
+| FFmpeg, COLMAP 3.11.1 (CUDA), OpenMVS 2.3.0 (CUDA) | dentro de `containers/photogrammetry.sif` (se construye una vez con Apptainer) | dentro de la imagen de `containers/Dockerfile` (se construye una vez con Docker) |
+| Python 3 + PyYAML, numpy, Pillow | en el mismo contenedor | en la misma imagen; o `pip install -r requirements.txt` si vas sin Docker |
+| GPU NVIDIA | nodos `--gres=shard:N` | driver NVIDIA en el host; sin GPU solo hasta `sfm`/`undistort` |
+| Segmentación (SegFormer / SAM 3, opcional) | `containers/segmentation.sif` + pesos descargados en el maestro | no incluida; dejar `masking.enabled: false` |
+| Lanzador | `slurm/submit.sh` | `containers/docker-run.sh` |
+
+Nada de esto hay que instalarlo "a mano": en Khipu lo trae el contenedor y en
+local la imagen Docker. Lo único que debe existir de antemano es Apptainer+SLURM
+(Khipu, ya instalados) o Docker (tu máquina).

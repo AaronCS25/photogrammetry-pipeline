@@ -6,7 +6,15 @@ import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:   # fuera del contenedor, sin PyYAML instalado
+    import sys
+    sys.exit(
+        "ERROR: falta el paquete Python 'PyYAML' (import yaml).\n"
+        "  Instalar las dependencias:  python3 -m pip install -r requirements.txt\n"
+        "  Guía completa para ejecutar fuera de Khipu: docs/ejecutar-fuera-de-khipu.md"
+    )
 
 # Raíz del repositorio (padre del paquete `pipeline`)
 REPO_ROOT = Path(__file__).resolve().parent.parent

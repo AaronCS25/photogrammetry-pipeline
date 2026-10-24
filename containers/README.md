@@ -1,5 +1,10 @@
 # Contenedor Apptainer
 
+> Fuera de Khipu (laptop/PC con Docker) se usa `Dockerfile` + `docker-run.sh`,
+> una copia 1:1 de `base.def` + `photogrammetry.def`; ver
+> [docs/ejecutar-fuera-de-khipu.md](../docs/ejecutar-fuera-de-khipu.md).
+> Si se cambia una versión en los `.def`, cambiarla también en el `Dockerfile`.
+
 La imagen `photogrammetry.sif` empaqueta **FFmpeg + COLMAP 3.11.1 (CUDA) +
 OpenMVS 2.3.0 (CUDA) + Python/PyYAML** sobre CUDA 12.6 / Ubuntu 22.04. Se
 compila para las tres GPUs de Khipu (T4, A100, RTX A6000), así que la misma
