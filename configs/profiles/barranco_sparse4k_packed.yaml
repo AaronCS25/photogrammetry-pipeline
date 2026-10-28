@@ -1,0 +1,5 @@
+# First end-to-end sparse test: same COLMAP/Python/libs as historical SIFT.
+extends: barranco_sparse4k
+targets: [sparse]
+runtime:
+  image: containers/sparse313.sif

@@ -345,6 +345,7 @@ export async function relaunch({ scene: sceneName, experiment, fromStage, sbatch
   const snap = store.snapshot();
   const exp = snap?.scenes?.find(s => s.name === sceneName)?.experiments?.find(e => e.name === experiment);
   if (!exp) throw Error('Experimento no encontrado en el último listado. Actualiza.');
+  if (exp.versioned) throw Error('Esta reconstrucción es versionada: usa scene/resume o scene/submit para actualizarla.');
   const lastJob = (snap.jobs || []).filter(j => (exp.jobs || []).includes(j.id) && j.config).sort((a, b) => b.id - a.id)[0];
   const config = exp.uiConfig ? `datasets/raw/${sceneName}/_ui/${experiment}.yaml` : lastJob?.config;
   if (!config) throw Error('No se sabe con qué YAML se lanzó (no hay log con cabecera). Clónalo como nuevo experimento.');
@@ -369,6 +370,17 @@ export async function cloneExperiment({ scene: sceneName, experiment }) {
 export function cancelJob(job) {
   if (!/^[0-9]{1,12}$/.test(String(job))) throw Error('Job no válido.');
   return call({ op: 'cancel', job: String(job) }).then(r => { store.event('cancel', String(job), `scancel ${job}.`); refresh({ force: true }).catch(() => {}); return r; });
+}
+
+/** Versioned scene API: same planner/receipts as the command-line interface. */
+export function sceneOperation(op, input) {
+  if (!['plan', 'submit', 'status', 'resume'].includes(op)) throw Error('Operación no válida.');
+  const request = { op: `scene_${op}`, scene: name(input.scene, 'Escena'),
+    profile: name(input.profile || 'barranco_sparse4k', 'Perfil'),
+    target: input.target || 'sparse', mode: input.mode || 'update',
+    allow_partial: Boolean(input.allow_partial), live: Boolean(input.live) };
+  if (['submit', 'resume'].includes(op)) request.request_id = name(input.request_id, 'request_id');
+  return call(request, 240000);
 }
 
 // ------------------------------------------------------------------ resultados (fase 3)
@@ -436,4 +448,3 @@ export async function compare(a, b) {
   if (!ma.metrics && !mb.metrics) throw Error('Ninguno de los dos tiene metrics.json todavía.');
   return { a, b, rows: compareRows(ma.metrics || {}, mb.metrics || {}) };
 }
-

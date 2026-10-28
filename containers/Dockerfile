@@ -22,6 +22,7 @@ FROM nvidia/cuda:12.6.3-devel-ubuntu22.04
 
 ARG CUDA_ARCHS="61;75;80;86;89"
 ARG J=8
+ARG COLMAP_VERSION=3.11.1
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C
 
 # ------------------------------------------------------------ dependencias apt
@@ -47,7 +48,7 @@ RUN git clone --branch 2.2.0 --depth 1 https://github.com/ceres-solver/ceres-sol
     && rm -rf /opt/src/ceres-solver
 
 # ------------------------------------------------------------------- COLMAP
-RUN git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git /opt/src/colmap \
+RUN git clone --branch ${COLMAP_VERSION} --depth 1 https://github.com/colmap/colmap.git /opt/src/colmap \
     && cmake -S /opt/src/colmap -B /opt/src/colmap/build -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCUDA_ENABLED=ON \

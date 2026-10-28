@@ -309,6 +309,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="pipeline", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    from .scene_cli import register
+    register(sub)
 
     p_run = sub.add_parser("run", help="Ejecuta el pipeline completo o etapas seleccionadas")
     p_run.add_argument("--config", help="YAML de experimento (se combina con configs/default.yaml)")

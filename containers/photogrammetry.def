@@ -1,5 +1,8 @@
 Bootstrap: localimage
-From: base.sif
+From: {{BASE_IMAGE}}
+
+%arguments
+    BASE_IMAGE=base.sif
 
 # =============================================================================
 # ETAPA 2/2: imagen final — base.sif + OpenMVS 2.3.0 (CUDA).

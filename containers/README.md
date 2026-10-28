@@ -1,5 +1,21 @@
 # Contenedor Apptainer
 
+## Variante COLMAP 3.13 para escenas versionadas
+
+Las features históricas de Barranco se generaron en Conda con COLMAP 3.13.0.
+No usar la imagen 3.11 para modificar esas BD. Las recetas admiten argumentos
+sin cambiar sus defaults antiguos:
+
+```bash
+apptainer build --build-arg COLMAP_VERSION=3.13.0 base313.sif base.def
+apptainer build --build-arg BASE_IMAGE=base313.sif photogrammetry313.sif photogrammetry.def
+```
+
+Docker: `--build-arg COLMAP_VERSION=3.13.0`. La mini-API selecciona
+`photogrammetry313.sif` y verifica la versión en runtime. El build y una prueba
+end-to-end con OpenMVS se realizan aparte; parametrizar la receta no certifica
+compatibilidad del importador. Ver [escenas versionadas](../docs/versioned-scenes.md).
+
 > Fuera de Khipu (laptop/PC con Docker) se usa `Dockerfile` + `docker-run.sh`,
 > una copia 1:1 de `base.def` + `photogrammetry.def`; ver
 > [docs/ejecutar-fuera-de-khipu.md](../docs/ejecutar-fuera-de-khipu.md).

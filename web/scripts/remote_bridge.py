@@ -123,6 +123,8 @@ def summarize_metrics(m):
 def experiment_info(exp_dir):
     stages = {}
     for marker in (exp_dir / '.stages').glob('*.done'):
+        if marker.stem.startswith('versioned-'):
+            continue
         data = read_json(marker) or {}
         stages[marker.stem] = {'at': data.get('finished_at'), 'seconds': data.get('elapsed_seconds'),
                                'job': data.get('slurm_job_id'), 'host': data.get('hostname')}
@@ -131,6 +133,7 @@ def experiment_info(exp_dir):
     sparse = exp_dir / 'colmap' / 'sparse'
     ui_config = ROOT / 'datasets' / 'raw' / exp_dir.parent.name / '_ui' / (exp_dir.name + '.yaml')
     return {
+        'versioned': read_json(exp_dir / 'run.json'),
         'uiConfig': ui_config.is_file(),
         'fragments': sum(1 for p in sparse.iterdir() if p.is_dir() and p.name.isdigit()) if sparse.is_dir() else None,
         'name': exp_dir.name, 'mtime': int(exp_dir.stat().st_mtime), 'stages': stages,
@@ -153,6 +156,14 @@ def log_header(job):
         return {}
     with path.open(encoding='utf-8', errors='replace') as stream:
         first = stream.readline().strip()
+    if first.startswith('{'):
+        try:
+            data = json.loads(first)
+            if data.get('versioned_scene'):
+                return {'config': data['request'], 'scene': data['scene'],
+                        'experiment': data['experiment'], 'args': data['phase'], 'versioned': True}
+        except (ValueError, KeyError):
+            pass
     match = re.search(r'config=(\S+)(?:\s+--scene\s+(\S+))?(.*)$', first)
     if not match:
         return {}
@@ -546,8 +557,38 @@ def digest_file(path):
     return h.hexdigest()
 
 
+def versioned_scene(req):
+    """Delegate versioned operations to the same Python API used by the CLI.
+
+    PHOTOGRAM_PYTHON may select a lightweight host interpreter with PyYAML.
+    No numerical work is performed here; submit only creates SLURM jobs.
+    """
+    operation = req['op'][len('scene_'):]
+    if operation not in ('plan', 'submit', 'status', 'resume'):
+        raise ValueError('Operación de escena no soportada')
+    args = [os.environ.get('PHOTOGRAM_PYTHON', 'python3'), '-m', 'pipeline', operation,
+            '--scene', identifier(req['scene'], r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')]
+    if operation in ('plan', 'submit'):
+        args += ['--profile', identifier(req.get('profile', 'barranco_sparse4k')),
+                 '--target', str(req.get('target', 'sparse')),
+                 '--mode', str(req.get('mode', 'update'))]
+        if req.get('allow_partial'):
+            args.append('--allow-partial')
+    if operation in ('submit', 'resume'):
+        args += ['--request-id', identifier(req['request_id'], r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')]
+    if operation == 'status' and req.get('live'):
+        args.append('--live')
+    result = subprocess.run(args, cwd=str(ROOT), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, universal_newlines=True, timeout=180)
+    if result.returncode and not (operation == 'plan' and result.returncode == 2 and result.stdout.strip().startswith('{')):
+        raise ValueError(result.stderr.strip() or 'Falló la API de escenas')
+    return json.loads(result.stdout)
+
+
 def dispatch(req):
     op = req.get('op')
+    if op in ('scene_plan', 'scene_submit', 'scene_status', 'scene_resume'):
+        return versioned_scene(req)
     if op in ('ls', 'validate', 'submit', 'cancel', 'read_config', 'previews', 'mesh_files'):
         return globals()[op](req)
     if op == 'health':

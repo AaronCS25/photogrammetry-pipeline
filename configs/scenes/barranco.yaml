@@ -1,0 +1,33 @@
+# Physical Drive layout stays untouched. Only real captures enter SfM.
+defaults:
+  raw_dir: datasets/raw/_drive_barranco/{scene}
+  legacy_root: outputs/_drive_sift/{scene}
+  exclude: ["*_map.png", "mapa*", "*.LRF", "*.lrf", "*.part"]
+  # No shared camera group is assumed across clips. Declare camera_groups per
+  # source in a scene override only after confirming device/zoom/calibration.
+scenes:
+  "001": {}
+  "002": {}
+  "003": {}
+  "004": {}
+  "005": {}
+  "006": {}
+  "007": {}
+  "008": {}
+  "009": {}
+  "010": {}
+  "011": {}
+  "012": {}
+  "013": {}
+  "014": {}
+  "015": {}
+  "016": {}
+  "017": {}
+  "018": {}
+  "019": {}
+  "020": {}
+  "021": {}
+  "022": {}
+  "023": {}
+  "024": {}
+  "025": {}

@@ -1,0 +1,56 @@
+# Versioned-scene profile; separate from legacy experiment YAMLs.
+colmap_version: "3.13.0"
+legacy_compatible: true
+frames:
+  fps: 2
+  resize: null
+  format: jpg
+  jpg_quality: 2
+features:
+  camera_model: SIMPLE_RADIAL
+  max_image_size: 4000
+  max_num_features: 8192
+  threads: 8
+  gpu: false
+matching:
+  threads: 4
+  gpu: true
+  overlap: 15
+  global: exhaustive
+  max_pairs: 250000
+mapping:
+  threads: 8
+  extra_args:
+    Mapper.ba_refine_focal_length: true
+    Mapper.ba_refine_principal_point: false
+    Mapper.ba_refine_extra_params: true
+quality:
+  min_registration_ratio: 0.7
+  max_reprojection_error: 4.0
+  min_track_length: 2.0
+masking:
+  enabled: false
+runtime:
+  engine: apptainer
+  image: containers/photogrammetry313.sif
+  segmentation_image: containers/segmentation.sif
+limits:
+  cpus: 32
+  mem_gb: 98
+resources:
+  prepare: {partition: standard, cpus: 4, mem_gb: 8, time: "04:00:00"}
+  masks: {partition: gpu, cpus: 4, mem_gb: 24, time: "04:00:00", gres: "shard:rtxa6000:4"}
+  features: {partition: standard, cpus: 8, mem_gb: 32, time: "06:00:00"}
+  matching: {partition: gpu, cpus: 4, mem_gb: 16, time: "12:00:00", gres: "shard:4"}
+  mapping: {partition: standard, cpus: 8, mem_gb: 32, time: "12:00:00"}
+  surface: {partition: gpu, cpus: 8, mem_gb: 48, time: "12:00:00", gres: "shard:8"}
+  publish: {partition: standard, cpus: 1, mem_gb: 2, time: "00:20:00"}
+pipeline:
+  frames: {fps: 2, resize: null}
+  colmap:
+    camera_model: SIMPLE_RADIAL
+    undistort: {max_image_size: -1}
+  georef: {enabled: false}
+  dense: {backend: openmvs}
+  openmvs:
+    densify: {resolution_level: 1}

@@ -17,6 +17,18 @@ video.mp4 ──ffmpeg──▶ frames ──COLMAP──▶ sparse ──undist
 
 ## Estructura del repositorio
 
+### Reconstrucciones incrementales por manzana
+
+La mini-API versionada añade `plan`, `submit`, `status`, `resume` y
+`submit-batch`: una nube independiente por manzana, caché de SIFT reutilizable
+y continuación hasta denso/malla/textura. Conserva el flujo `run` existente.
+Guía, arquitectura y compatibilidad Conda 3.13 ↔ Apptainer:
+[docs/versioned-scenes.md](docs/versioned-scenes.md).
+
+```bash
+python -m pipeline plan --scene 001 --target sparse  # solo lectura
+```
+
 ```
 photogrammetry-pipeline/
 ├── configs/

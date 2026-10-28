@@ -1,6 +1,8 @@
 # Datos y resultados (pesados, no se versionan)
 datasets/raw/*
 !datasets/raw/.gitkeep
+datasets/cache/
+datasets/_state/
 outputs/*
 !outputs/.gitkeep
 
@@ -10,6 +12,7 @@ resources/
 # Imágenes de contenedor y logs de build
 *.sif
 containers/build*.log
+containers/*-env.tar
 
 # Logs de SLURM
 slurm-logs/

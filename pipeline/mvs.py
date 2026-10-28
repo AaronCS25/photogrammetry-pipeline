@@ -34,6 +34,9 @@ def _cuda_args(ctx: Context) -> list[str]:
 
 
 def _run(ctx: Context, cmd: list, log_name: str) -> None:
+    threads = ctx.cfg.get("runtime", {}).get("num_threads")
+    if threads and "--max-threads" not in cmd:
+        cmd = [*cmd, "--max-threads", str(threads)]
     run_cmd(cmd, ctx.logs_dir / log_name, cwd=ctx.mvs_dir)
 
 

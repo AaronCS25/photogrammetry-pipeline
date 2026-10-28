@@ -28,6 +28,10 @@ const POST:Record<string,(b:any)=>any>={
   'launch/check':b=>service.checkLaunch(b.id),
   relaunch:b=>service.relaunch(b),
   cancel:b=>service.cancelJob(b.job),
+  'scene/plan':b=>service.sceneOperation('plan',b),
+  'scene/submit':b=>service.sceneOperation('submit',b),
+  'scene/status':b=>service.sceneOperation('status',b),
+  'scene/resume':b=>service.sceneOperation('resume',b),
   // fase 3
   previews:b=>service.previews(b.scene,b.experiment,Boolean(b.force)),
   'mesh/download':b=>service.downloadMesh(b.scene,b.experiment),

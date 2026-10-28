@@ -1,0 +1,34 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+# Build from containers/: apptainer build sparse313.sif sparse313.def
+# First pack the existing COLMAP environment as colmap313-env.tar (conda-pack).
+# This image supports sparse only. OpenMVS is in photogrammetry313.sif.
+%files
+    colmap313-env.tar /opt/colmap313-env.tar
+
+%post
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends ffmpeg ca-certificates
+    mkdir -p /opt/colmap
+    tar -xf /opt/colmap313-env.tar -C /opt/colmap
+    /opt/colmap/bin/python /opt/colmap/bin/conda-unpack
+    rm /opt/colmap313-env.tar
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/colmap/bin:/usr/bin:/bin
+    export LC_ALL=C
+    export QT_QPA_PLATFORM=offscreen
+
+%test
+    set -eu
+    /opt/colmap/bin/python -c 'import yaml, PIL, numpy'
+    /opt/colmap/bin/colmap -h 2>&1 | grep 'COLMAP 3.13.0'
+    /usr/bin/ffprobe -version
+
+%runscript
+    exec "$@"
