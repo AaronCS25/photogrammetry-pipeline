@@ -1,5 +1,7 @@
 # L507: segmentación reproducible hasta densificación
 
+Informe del ensayo certificado: [l507-segmentation-result.md](l507-segmentation-result.md).
+
 ## Referencia y recuperación
 
 El piloto original queda en `l507-baseline-sparse-dense-v1` (commit `02c1c7b`),
