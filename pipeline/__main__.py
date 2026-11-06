@@ -82,10 +82,6 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     ctx = make_context(cfg, args.scene, force=args.force)
     ctx.prepare()
-    from .state import bind_run
-    run_lock = bind_run(ctx)  # held until this command returns
-    ctx.dump_resolved_config()
-
     stages = _selected_stages(args)
     if restrict is not None:
         stages = [s for s in stages if s in restrict]
@@ -97,6 +93,10 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
     if not (ctx.cfg.get("georef") or {}).get("enabled") and "georef" in stages:
         stages.remove("georef")
 
+    from .state import bind_run
+    run_lock = bind_run(ctx, stages=stages)  # held until this command returns
+    ctx.dump_resolved_config()
+
     print(f"[pipeline] escena='{ctx.scene}' experimento='{ctx.experiment}'")
     print(f"[pipeline] etapas a ejecutar: {stages}")
     print(f"[pipeline] salida: {ctx.out_dir}")
@@ -105,7 +105,9 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
         print("[pipeline] nada que ejecutar")
         return 0
 
-    runner = StageRunner(ctx.markers_dir, force=args.force)
+    from .artifacts import validate_stage
+    validator = (lambda stage: validate_stage(ctx, stage)) if ctx.cfg.get('runtime', {}).get('verify_cache') else None
+    runner = StageRunner(ctx.markers_dir, force=args.force, validator=validator)
     if args.force and stages and ctx.cfg.get('runtime', {}).get('verify_cache', False):
         # Rebuilding an upstream stage invalidates all later markers, even when
         # those stages are not selected in this invocation.
@@ -327,7 +329,7 @@ def main() -> int:
     p_doc = sub.add_parser("doctor", help="Diagnóstico de GPU, herramientas, datos y espacio (sin modificaciones)")
     p_doc.add_argument("--config")
     p_doc.add_argument("--scene")
-    p_doc.add_argument("--profile", choices=("sparse", "dense"), default="dense")
+    p_doc.add_argument("--profile", choices=("sparse", "dense", "segmentation"), default="dense")
     p_doc.add_argument("--json", action="store_true")
     p_doc.set_defaults(func=run_doctor)
 

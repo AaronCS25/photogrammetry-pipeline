@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,7 +57,18 @@ def load_config(experiment_config: str | None) -> dict:
         if not exp_path.is_absolute():
             exp_path = REPO_ROOT / exp_path
         cfg = deep_merge(cfg, load_yaml(exp_path))
-    return cfg
+    def expand(value):
+        if isinstance(value, dict):
+            return {key: expand(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [expand(item) for item in value]
+        if isinstance(value, str) and '${' in value:
+            result = os.path.expandvars(value)
+            if re.search(r'\$\{[^}]+\}', result):
+                raise ConfigError(f'Undefined environment variable in configuration: {value}')
+            return result
+        return value
+    return expand(cfg)
 
 
 def _resolve_path(value: str) -> Path:

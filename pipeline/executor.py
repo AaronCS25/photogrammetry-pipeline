@@ -121,9 +121,10 @@ def extra_args_to_cli(extra: dict | None) -> list[str]:
 class StageRunner:
     """Ejecuta etapas con marcadores .done (reanudación) y registro de tiempos."""
 
-    def __init__(self, markers_dir: Path, force: bool = False):
+    def __init__(self, markers_dir: Path, force: bool = False, validator=None):
         self.markers_dir = markers_dir
         self.force = force
+        self.validator = validator
         self.timings: dict[str, float] = {}
         self.executed: list[str] = []
         self.skipped: list[str] = []
@@ -139,6 +140,8 @@ class StageRunner:
 
     def run(self, name: str, fn) -> None:
         if self.is_done(name) and not self.force:
+            if self.validator:
+                self.validator(name)
             print(f"[pipeline] etapa '{name}': ya completada, se omite (usar --force para repetir)")
             self.skipped.append(name)
             return
@@ -146,6 +149,8 @@ class StageRunner:
         print(f"[pipeline] etapa '{name}': iniciando")
         start = time.time()
         fn()
+        if self.validator:
+            self.validator(name)
         elapsed = time.time() - start
         self.timings[name] = round(elapsed, 2)
         self.executed.append(name)
@@ -159,6 +164,8 @@ class StageRunner:
                     "elapsed_seconds": self.timings[name],
                     "hostname": platform.node(),
                     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                    "image_id": os.environ.get("PG_IMAGE_ID"),
+                    "role": os.environ.get("PG_RUN_ROLE", "reconstruction"),
                 }
             ),
             encoding="utf-8",

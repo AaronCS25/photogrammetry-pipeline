@@ -26,3 +26,12 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local lab enrollment, model assets and portable runtime archives
+/node*.env
+/models/
+/runtime/
+/scratch/
+/checkpoints/
+*.bundle
+*.tar

@@ -164,8 +164,9 @@ GPU=0 ./containers/docker-run.sh python3 -m pipeline run \
 
 - **Máscaras semánticas** (`masking.enabled: true`, backends `segformer` y
   `sam3`): necesitan PyTorch con CUDA y los pesos de los modelos. En Khipu
-  van en otro contenedor (`containers/segmentation.def`). Localmente deja
-  `masking.enabled: false` (es el valor por defecto; `quick_test` no las usa).
+  van en otro contenedor (`containers/segmentation.def`). En Docker se usa
+  `containers/Dockerfile.segmentation`; ver [guía L507](l507-segmentation.md).
+  Sin ese entorno, deja `masking.enabled: false` (valor por defecto).
   Los backends `wires` y `manual` sí funcionan con la imagen de este documento.
 - **SLURM**: `slurm/submit.sh` y `slurm/pipeline.sbatch` son solo para Khipu.
 

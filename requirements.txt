@@ -7,3 +7,5 @@ pillow>=9.0        # EXIF (georef GPX), previews, máscaras manuales, atlas
 #   opencv-python-headless>=4.8
 # Segmentación semántica (segformer / sam3): NO va aquí; requiere PyTorch con CUDA.
 # Ver containers/segmentation.def.
+# Máscaras alineadas para OpenMVS (masking.apply_to_dense): PyCOLMAP 3.11.1
+# en la imagen de reconstrucción; ver containers/Dockerfile.pycolmap.

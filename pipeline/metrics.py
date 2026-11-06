@@ -121,10 +121,21 @@ def run_metrics(ctx: Context, timings: dict[str, float],
 
     # Nodo en el que corrió cada etapa (puede variar si el experimento se reanudó)
     if stage_info:
+        metrics['stage_environments'] = {
+            stage: {key: info.get(key) for key in ('image_id', 'role')}
+            for stage, info in stage_info.items()
+        }
         hosts = {stage: info.get("hostname") for stage, info in stage_info.items()
                  if info.get("hostname")}
         if hosts:
             metrics["stage_hosts"] = hosts
+
+    manifest = ctx.out_dir / 'run_manifest.json'
+    if manifest.is_file():
+        provenance = json.loads(manifest.read_text())
+        metrics['run_signature'] = provenance.get('signature')
+        metrics['declared_environments'] = provenance.get('environments')
+        metrics['model_assets'] = provenance.get('models')
 
     # Desglose interno de la etapa sfm (features / matching / mapper), si existe
     sfm_timings_file = ctx.metrics_dir / "sfm_timings.json"

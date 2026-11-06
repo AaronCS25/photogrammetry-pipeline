@@ -1,0 +1,23 @@
+# Blackwell-capable segmentation environment. Weights and credentials are external.
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
+ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev git ca-certificates libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY containers/segmentation-requirements.txt /opt/segmentation-requirements.txt
+ENV PATH=/opt/venv/bin:$PATH
+RUN /usr/bin/python3 -m venv --without-pip /opt/venv \
+    && /usr/bin/python3 -m pip --python /opt/venv install --no-cache-dir pip==25.3 \
+    && python3 -m pip install --no-cache-dir \
+       torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu128 \
+    && python3 -m pip install --no-cache-dir -r /opt/segmentation-requirements.txt
+ARG SAM3_REF=660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7
+RUN git clone https://github.com/facebookresearch/sam3.git /opt/sam3 \
+    && git -C /opt/sam3 checkout "$SAM3_REF" \
+    && test "$(git -C /opt/sam3 rev-parse HEAD)" = "$SAM3_REF" \
+    && python3 -m pip install --no-cache-dir --no-deps /opt/sam3 \
+    && python3 -c "import torch, transformers; from sam3.model_builder import build_sam3_image_model; from sam3.model.sam3_image_processor import Sam3Processor; assert 'sm_120' in torch.cuda.get_arch_list() or torch.version.cuda == '12.8'; print(torch.__version__)"
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1
+LABEL photogrammetry.role="segmentation" photogrammetry.sam3_ref="${SAM3_REF}"
+WORKDIR /work
+ENTRYPOINT ["/usr/bin/env"]

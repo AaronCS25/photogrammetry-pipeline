@@ -24,7 +24,9 @@ def run_doctor(args) -> int:
         free = shutil.disk_usage(data_root).free / 1024**3
         minimum = float(os.environ.get('PG_MIN_FREE_GIB', '20'))
         check('free_space', free >= minimum, f'{free:.1f} GiB libres; mínimo {minimum:g}')
-    for name in ('yaml', 'numpy', 'PIL', 'pycolmap'):
+    segmentation = args.profile == 'segmentation'
+    modules = ('yaml', 'numpy', 'PIL', 'torch', 'transformers') if segmentation else ('yaml', 'numpy', 'PIL', 'pycolmap')
+    for name in modules:
         try:
             module = importlib.import_module(name)
             check(name, True, getattr(module, '__version__', 'import OK'))
@@ -33,19 +35,34 @@ def run_doctor(args) -> int:
                 check('pycolmap_version', module.__version__ == '3.11.1', module.__version__)
         except (ImportError, OSError) as exc:
             check(name, False, exc)
-    binaries = ['ffmpeg', 'ffprobe', 'colmap']
+    binaries = [] if segmentation else ['ffmpeg', 'ffprobe', 'colmap']
     if args.profile == 'dense':
         binaries += ['InterfaceCOLMAP', 'DensifyPointCloud']
     for binary in binaries:
         path = shutil.which(binary)
         check(binary, path is not None, path or 'not found')
     try:
-        result = subprocess.run(['colmap', 'help'], text=True, capture_output=True, timeout=30)
-        text = result.stdout + result.stderr
-        check('colmap_version', result.returncode == 0 and 'COLMAP 3.11.1' in text and 'with CUDA' in text,
-              next((s for s in text.splitlines() if 'COLMAP ' in s), text[-500:]))
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        check('colmap_version', False, exc)
+        if segmentation:
+            import torch
+            from sam3.model_builder import build_sam3_image_model
+            from sam3.model.sam3_image_processor import Sam3Processor
+            check('sam3_api', callable(build_sam3_image_model) and callable(Sam3Processor), 'official image API')
+            a = torch.ones((32, 32), device='cuda')
+            check('torch_cuda_kernel', (a @ a).mean().item() == 32, torch.cuda.get_device_name())
+            from .model_assets import verify_manifest
+            manifests = cfg.get('runtime', {}).get('model_manifests', {})
+            for model in ('segformer', 'sam3'):
+                check('weights_' + model, True, verify_manifest(manifests[model]))
+    except Exception as exc:
+        check('segmentation_environment', False, exc)
+    if not segmentation:
+        try:
+            result = subprocess.run(['colmap', 'help'], text=True, capture_output=True, timeout=30)
+            text = result.stdout + result.stderr
+            check('colmap_version', result.returncode == 0 and 'COLMAP 3.11.1' in text and 'with CUDA' in text,
+                  next((s for s in text.splitlines() if 'COLMAP ' in s), text[-500:]))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            check('colmap_version', False, exc)
     if cfg.get('runtime', {}).get('gpu', True):
         try:
             result = subprocess.run(['nvidia-smi', '--query-gpu=name,driver_version,memory.free,compute_cap',

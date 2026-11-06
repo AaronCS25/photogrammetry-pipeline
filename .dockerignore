@@ -9,3 +9,10 @@ resources
 web/data
 *.sif
 *.log
+models
+runtime
+scratch
+checkpoints
+node*.env
+*.bundle
+*.tar

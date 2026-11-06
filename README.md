@@ -3,6 +3,8 @@
 **Piloto local L507 (Docker + Blackwell, sparse/densa, volumen bajo demanda):**
 [guía y comandos](docs/l507-pilot.md). Incluye diagnóstico `pipeline doctor`,
 PyCOLMAP CUDA y ensayo del video de la cuadra 025 en el intervalo 0–10 s.
+Para SegFormer-B5 + SAM 3, máscaras alineadas, pruebas y réplica por nodo, ver
+[segmentación L507](docs/l507-segmentation.md).
 
 Pipeline reproducible de fotogrametría para el cluster **Khipu (UTEC)**:
 a partir de videos (dron y/o teléfono) genera frames con **FFmpeg**, reconstrucción
@@ -184,7 +186,7 @@ El `colmap` de `apt` (3.7, sin CUDA) no sirve.
 | FFmpeg, COLMAP 3.11.1 (CUDA), OpenMVS 2.3.0 (CUDA) | dentro de `containers/photogrammetry.sif` (se construye una vez con Apptainer) | dentro de la imagen de `containers/Dockerfile` (se construye una vez con Docker) |
 | Python 3 + PyYAML, numpy, Pillow | en el mismo contenedor | en la misma imagen; o `pip install -r requirements.txt` si vas sin Docker |
 | GPU NVIDIA | nodos `--gres=shard:N` | driver NVIDIA en el host; sin GPU solo hasta `sfm`/`undistort` |
-| Segmentación (SegFormer / SAM 3, opcional) | `containers/segmentation.sif` + pesos descargados en el maestro | no incluida; dejar `masking.enabled: false` |
+| Segmentación (SegFormer / SAM 3, opcional) | `containers/segmentation.sif` + pesos descargados en el maestro | imagen separada: `containers/Dockerfile.segmentation` + pesos locales; [guía L507](docs/l507-segmentation.md) |
 | Lanzador | `slurm/submit.sh` | `containers/docker-run.sh` |
 
 Nada de esto hay que instalarlo "a mano": en Khipu lo trae el contenedor y en

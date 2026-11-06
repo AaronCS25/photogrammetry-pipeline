@@ -1,0 +1,5 @@
+{
+  "tag": "REPLACE_WITH_NODE_TAG",
+  "data_uuid": "REPLACE_WITH_THIS_NODES_DATA_PARTITION_UUID",
+  "mountpoint": "/data"
+}

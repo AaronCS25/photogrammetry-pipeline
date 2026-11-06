@@ -61,6 +61,13 @@ def run_densify(ctx: Context) -> None:
     workspace = undistorted_dir(ctx)
     if not workspace.is_dir():
         raise CommandError(f"No existe {workspace}: ejecutar antes la etapa 'undistort'.")
+    mcfg = ctx.cfg.get('masking') or {}
+    dense_masks = None
+    if mcfg.get('enabled') and mcfg.get('apply_to_dense'):
+        from .masks import require_masks
+        from .mask_geometry import require_dense_masks
+        require_masks(ctx)
+        dense_masks = require_dense_masks(ctx, workspace)
     _link_undistorted_images(ctx, workspace)
 
     # 1) Conversión del workspace COLMAP a formato OpenMVS (.mvs)
@@ -97,14 +104,8 @@ def run_densify(ctx: Context) -> None:
         "--resolution-level", str(dcfg.get("resolution_level", 1)),
         "--number-views", str(dcfg.get("number_views", 0)),
     ]
-    mcfg = ctx.cfg.get("masking") or {}
-    if mcfg.get("enabled") and mcfg.get("apply_to_dense"):
-        # Máscaras generadas sobre los frames originales; la undistorsión
-        # desplaza píxeles algunos px cerca de los bordes — el dilate_px de la
-        # etapa masks absorbe ese margen.
-        from .masks import require_masks
-        require_masks(ctx)
-        cmd += ["--mask-path", ctx.masks_dir, "--ignore-mask-label", "0"]
+    if dense_masks is not None:
+        cmd += ["--mask-path", dense_masks, "--ignore-mask-label", "0"]
         print("[dense] enmascaramiento activo también en la densificación")
     cmd += _cuda_args(ctx)
     cmd += extra_args_to_cli(dcfg.get("extra_args"))

@@ -26,6 +26,12 @@ if [[ -n "${PG_ENV_FILE:-}" ]]; then
 fi
 
 IMAGE="${IMAGE:-photogrammetry:local}"
+PG_RUN_ROLE="${PG_RUN_ROLE:-reconstruction}"
+PG_RECON_IMAGE_ID="${PG_EXPECTED_IMAGE_ID:-}"
+if [[ "$PG_RUN_ROLE" == "segmentation" ]]; then
+    IMAGE="${PG_SEG_IMAGE:?Missing PG_SEG_IMAGE}"
+    PG_EXPECTED_IMAGE_ID="${PG_SEG_IMAGE_ID:?Missing PG_SEG_IMAGE_ID}"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "ERROR: 'docker' no está instalado o no está en el PATH." >&2
@@ -46,8 +52,10 @@ if [[ -n "${PG_DATA_ROOT:-}" ]]; then
     if [[ -n "${PG_REQUIRE_MOUNT:-}" ]] && [[ "$(stat -c %d "$PG_DATA_ROOT")" != "$(stat -c %d "$PG_REQUIRE_MOUNT")" ]]; then
         echo "ERROR: datos fuera del volumen requerido." >&2; exit 1
     fi
+    mkdir -p "$PG_DATA_ROOT/scratch/cache/torch/kernels"
     DATA_OPTS=(--mount "type=bind,src=$PG_DATA_ROOT,dst=$PG_DATA_ROOT"
         -e "PG_DATA_ROOT=$PG_DATA_ROOT" -e "PG_MIN_FREE_GIB=${PG_MIN_FREE_GIB:-20}"
+        -e "HF_HOME=$PG_DATA_ROOT/models/hf-cache" -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1
         -e "TMPDIR=$PG_DATA_ROOT/scratch" -e "XDG_CACHE_HOME=$PG_DATA_ROOT/scratch/cache")
 fi
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -84,8 +92,10 @@ fi
 # -e HOME: algunos programas escriben caché en $HOME; /tmp siempre es escribible.
 exec docker run --rm "${TTY_OPTS[@]}" "${GPU_OPTS[@]}" "${DATA_OPTS[@]}" "${RESOURCE_OPTS[@]}" "${ENTRYPOINT_OPTS[@]}" \
     --init --label photogrammetry.project=pipeline --label "photogrammetry.node=${PG_NODE_TAG:-local}" \
+    --network "${PG_NETWORK:-bridge}" \
     -u "$(id -u):$(id -g)" -e HOME=/tmp \
     -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUNBUFFERED=1 -e "PG_IMAGE_ID=$IMAGE_ID" \
     -e "PG_NODE_TAG=${PG_NODE_TAG:-local}" \
+    -e "PG_RUN_ROLE=$PG_RUN_ROLE" -e "PG_RECON_IMAGE_ID=$PG_RECON_IMAGE_ID" -e "PG_SEG_IMAGE_ID=${PG_SEG_IMAGE_ID:-}" \
     -v "$PWD":/work -w /work \
     "$IMAGE" "$@"

@@ -1,0 +1,100 @@
+experiment:
+  name: seg025_0_10s_combined_v1
+  notes: 'Controlled comparison: identical 20 frames, cameras and reconstruction parameters.'
+paths:
+  raw_root: ${PG_DATA_ROOT}/datasets/raw
+  output_root: ${PG_DATA_ROOT}/outputs
+frames:
+  start: 00:00:00
+  end: 00:00:10
+  fps: 2
+  resize:
+    long_edge: 1280
+  format: jpg
+  jpg_quality: 2
+telemetry:
+  enabled: true
+masking:
+  enabled: true
+  backend:
+  - segformer
+  - sam3
+  apply_to_dense: true
+  dilate_px: 3
+  classes:
+  - person
+  - rider
+  - car
+  - truck
+  - bus
+  - train
+  - motorcycle
+  - bicycle
+  - sky
+  backends:
+    segformer:
+      model_id: ${PG_DATA_ROOT}/models/segformer
+      inference_size: 1024
+      dilate_px: 3
+    sam3:
+      checkpoint: ${PG_DATA_ROOT}/models/sam3/sam3.pt
+      prompts:
+      - person
+      - car
+      - truck
+      - bus
+      - motorcycle
+      - bicycle
+      - sky
+      - power line
+      - utility pole
+      score_threshold: 0.5
+      dilate_px: 3
+      tiles: null
+georef:
+  enabled: false
+colmap:
+  camera_model: SIMPLE_RADIAL
+  feature_extractor:
+    use_gpu: true
+    max_image_size: 1280
+    max_num_features: 8192
+    extra_args:
+      SiftExtraction.num_threads: 8
+  matcher:
+    methods:
+    - exhaustive
+    use_gpu: true
+    extra_args:
+      SiftMatching.num_threads: 8
+  mapper:
+    extra_args:
+      Mapper.num_threads: 8
+      Mapper.min_model_size: 3
+  undistort:
+    max_image_size: 1280
+dense:
+  backend: openmvs
+openmvs:
+  densify:
+    resolution_level: 1
+    number_views: 4
+    extra_args:
+      max-threads: 8
+      max-resolution: 1280
+      min-resolution: 640
+  mesh:
+    enabled: false
+  refine:
+    enabled: false
+  clean:
+    enabled: false
+  texture:
+    enabled: false
+runtime:
+  gpu: true
+  verify_cache: true
+  multi_image: true
+  model_manifests:
+    segformer: ${PG_DATA_ROOT}/models/segformer/weights-manifest.json
+    sam3: ${PG_DATA_ROOT}/models/sam3/weights-manifest.json

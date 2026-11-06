@@ -118,11 +118,19 @@ def require_masks(ctx: Context) -> None:
             "  apptainer exec --nv containers/segmentation.sif \\\n"
             f"      python3 -m pipeline run --config <cfg> --scene {ctx.scene} --stages masks"
         )
+    import numpy as np
+    from PIL import Image
+    for source, images in frame_images(ctx.frames_dir).items():
+        for image in images:
+            with Image.open(image) as frame, Image.open(ctx.masks_dir / source / colmap_mask_path(image)) as mask:
+                if mask.size != frame.size or not np.isin(np.array(mask.convert('L')), [0, 255]).all():
+                    raise CommandError(f'Invalid binary mask or dimensions for {source}/{image.name}')
 
 
-def _link_openmvs_aliases(ctx: Context, sources: dict[str, list[Path]]) -> None:
+def _link_openmvs_aliases(ctx: Context, sources: dict[str, list[Path]], mask_root=None) -> None:
     """Crea en la RAÍZ de masks/ los alias planos <stem>.mask.png que espera
     OpenMVS, como hardlinks de las máscaras COLMAP (cero espacio extra)."""
+    root = mask_root if mask_root is not None else ctx.masks_dir
     seen: dict[str, str] = {}
     for source, images in sources.items():
         for image in images:
@@ -135,8 +143,8 @@ def _link_openmvs_aliases(ctx: Context, sources: dict[str, list[Path]]) -> None:
                     "los stems sean únicos entre fuentes."
                 )
             seen[alias] = owner
-            src = ctx.masks_dir / source / colmap_mask_path(image)
-            dst = ctx.masks_dir / alias
+            src = root / source / colmap_mask_path(image)
+            dst = root / alias
             dst.unlink(missing_ok=True)
             try:
                 os.link(src, dst)
@@ -307,6 +315,7 @@ def run_masks(ctx: Context) -> None:
                   "(quedará poca señal útil en ellas)")
 
     _link_openmvs_aliases(ctx, sources)
+    require_masks(ctx)
 
     ctx.metrics_dir.mkdir(parents=True, exist_ok=True)
     with open(ctx.metrics_dir / "masks_info.json", "w", encoding="utf-8") as fh:

@@ -229,6 +229,10 @@ def run_undistort(ctx: Context) -> None:
         "--max_image_size", str(cfg.get("max_image_size", -1)),
     ]
     run_cmd(cmd, ctx.logs_dir / "undistort.log")
+    masking = ctx.cfg.get('masking') or {}
+    if masking.get('enabled') and masking.get('apply_to_dense'):
+        from .mask_geometry import prepare_dense_masks
+        prepare_dense_masks(ctx, out, _active_model(ctx))
 
 
 # ---------------------------------------------------------------------------
