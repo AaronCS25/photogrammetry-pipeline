@@ -5,15 +5,40 @@ from __future__ import annotations
 import json
 import os
 import platform
+import queue
+import signal
+import shutil
 import subprocess
 import sys
 import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 class CommandError(RuntimeError):
     pass
+
+
+def check_free_space() -> None:
+    root = os.environ.get("PG_DATA_ROOT")
+    if not root:
+        return
+    free = shutil.disk_usage(root).free / 1024**3
+    minimum = float(os.environ.get("PG_MIN_FREE_GIB", "20"))
+    if free < minimum:
+        raise CommandError(f"Espacio insuficiente en {root}: {free:.1f} GiB libres, mínimo {minimum:g}")
+
+
+def _terminate(proc) -> None:
+    if proc.poll() is not None:
+        return
+    os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=10)
 
 
 def format_cmd(cmd: list) -> str:
@@ -25,6 +50,7 @@ def run_cmd(cmd: list, log_path: Path, cwd: Path | None = None, echo: bool = Tru
 
     Devuelve el tiempo transcurrido en segundos; lanza CommandError si falla.
     """
+    check_free_space()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     start = time.time()
     with open(log_path, "a", encoding="utf-8", errors="replace") as log:
@@ -42,13 +68,37 @@ def run_cmd(cmd: list, log_path: Path, cwd: Path | None = None, echo: bool = Tru
             text=True,
             errors="replace",
             bufsize=1,
+            start_new_session=True,
         )
         assert proc.stdout is not None
-        for line in proc.stdout:
-            log.write(line)
-            if echo:
-                sys.stdout.write(line)
-        returncode = proc.wait()
+        lines = queue.Queue(maxsize=512)
+        def pump():
+            try:
+                for line in proc.stdout:
+                    lines.put(line)
+            finally:
+                proc.stdout.close()
+                lines.put(None)
+        threading.Thread(target=pump, daemon=True).start()
+        next_check = time.monotonic()
+        try:
+            while True:
+                if time.monotonic() >= next_check:
+                    check_free_space()
+                    next_check = time.monotonic() + 2
+                try:
+                    line = lines.get(timeout=1)
+                except queue.Empty:
+                    continue
+                if line is None:
+                    break
+                log.write(line)
+                if echo:
+                    sys.stdout.write(line)
+            returncode = proc.wait()
+        except BaseException:
+            _terminate(proc)
+            raise
         log.flush()
     elapsed = time.time() - start
     if returncode != 0:
@@ -100,7 +150,9 @@ class StageRunner:
         self.timings[name] = round(elapsed, 2)
         self.executed.append(name)
         self.markers_dir.mkdir(parents=True, exist_ok=True)
-        self._marker(name).write_text(
+        marker = self._marker(name)
+        temporary = marker.with_suffix(".tmp")
+        temporary.write_text(
             json.dumps(
                 {
                     "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -111,6 +163,7 @@ class StageRunner:
             ),
             encoding="utf-8",
         )
+        temporary.replace(marker)
         print(f"[pipeline] etapa '{name}': completada en {elapsed:,.1f} s")
 
     def collected_stage_info(self) -> dict[str, dict]:

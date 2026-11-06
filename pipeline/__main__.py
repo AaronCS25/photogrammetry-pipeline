@@ -82,6 +82,8 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     ctx = make_context(cfg, args.scene, force=args.force)
     ctx.prepare()
+    from .state import bind_run
+    run_lock = bind_run(ctx)  # held until this command returns
     ctx.dump_resolved_config()
 
     stages = _selected_stages(args)
@@ -104,6 +106,11 @@ def cmd_run(args: argparse.Namespace, restrict: list[str] | None = None) -> int:
         return 0
 
     runner = StageRunner(ctx.markers_dir, force=args.force)
+    if args.force and stages and ctx.cfg.get('runtime', {}).get('verify_cache', False):
+        # Rebuilding an upstream stage invalidates all later markers, even when
+        # those stages are not selected in this invocation.
+        for stage in STAGE_ORDER[STAGE_ORDER.index(stages[0]):]:
+            runner.clear(stage)
     functions = _stage_functions(ctx)
     try:
         for stage in stages:
@@ -287,9 +294,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print("\nLimpieza de malla: " + " | ".join(parts))
 
     print("\nBinarios en PATH:")
+    missing = []
     for binary in ("ffmpeg", "ffprobe", "colmap", "DensifyPointCloud"):
         status = shutil.which(binary) or "NO ENCONTRADO (normal fuera del contenedor; ver docs/ejecutar-fuera-de-khipu.md)"
         print(f"  {binary}: {status}")
+        if not shutil.which(binary):
+            missing.append(binary)
+    if missing:
+        print(f"ERROR: herramientas requeridas ausentes: {', '.join(missing)}", file=sys.stderr)
+        return 1
 
     print("\n✔ Configuración válida.")
     return 0
@@ -309,6 +322,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="pipeline", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    from .doctor import run_doctor
+    p_doc = sub.add_parser("doctor", help="Diagnóstico de GPU, herramientas, datos y espacio (sin modificaciones)")
+    p_doc.add_argument("--config")
+    p_doc.add_argument("--scene")
+    p_doc.add_argument("--profile", choices=("sparse", "dense"), default="dense")
+    p_doc.add_argument("--json", action="store_true")
+    p_doc.set_defaults(func=run_doctor)
 
     p_run = sub.add_parser("run", help="Ejecuta el pipeline completo o etapas seleccionadas")
     p_run.add_argument("--config", help="YAML de experimento (se combina con configs/default.yaml)")

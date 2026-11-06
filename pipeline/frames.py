@@ -109,13 +109,33 @@ def _scale_filter(resize: dict | None) -> str | None:
     raise CommandError(f"resize no reconocido: {resize} (usar long_edge o width+height)")
 
 
+def timestamp_seconds(value) -> float:
+    """Seconds or HH:MM:SS[.fraction], always relative to the original video."""
+    parts = str(value).split(":")
+    try:
+        if len(parts) > 3:
+            raise ValueError
+        result = 0.0
+        for part in parts:
+            result = result * 60 + float(part)
+        if result < 0 or not __import__('math').isfinite(result):
+            raise ValueError
+        return result
+    except ValueError as exc:
+        raise CommandError(f"Timestamp inválido: {value!r}") from exc
+
+
 def build_ffmpeg_cmd(video: Path, out_pattern: Path, settings: dict) -> list[str]:
     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y"]
     if settings.get("start"):
         cmd += ["-ss", str(settings["start"])]
     cmd += ["-i", str(video)]
-    if settings.get("end"):
-        cmd += ["-to", str(settings["end"])]
+    if settings.get("end") is not None:
+        duration = timestamp_seconds(settings["end"]) - timestamp_seconds(settings.get("start") or 0)
+        if duration <= 0:
+            raise CommandError("frames.end debe ser posterior a frames.start")
+        # -ss before -i resets the output timeline: -to would overrun a nonzero start.
+        cmd += ["-t", str(duration)]
 
     filters = [f"fps={settings.get('fps', 2)}"]
     scale = _scale_filter(settings.get("resize"))

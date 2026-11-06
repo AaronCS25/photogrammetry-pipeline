@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -105,6 +106,9 @@ def make_context(cfg: dict, scene: str | None, force: bool = False) -> Context:
     if not scene:
         raise ConfigError("Falta la escena: usar --scene <nombre> o fijar 'scene:' en el YAML.")
     experiment = (cfg.get("experiment") or {}).get("name") or "default"
+    for label, value in (("scene", scene), ("experiment.name", experiment)):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", str(value)) or ".." in str(value):
+            raise ConfigError(f"{label} debe ser un identificador, no una ruta: {value!r}")
     ctx = Context(cfg=cfg, scene=str(scene), experiment=str(experiment), force=force)
     if not ctx.raw_dir.is_dir():
         raise ConfigError(

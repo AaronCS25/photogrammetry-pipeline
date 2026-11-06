@@ -1,7 +1,7 @@
 # =============================================================================
 # Imagen Docker EQUIVALENTE a base.def + photogrammetry.def, para ejecutar el
 # pipeline FUERA de Khipu (laptop/PC con Docker). Mismas versiones:
-#   CUDA 12.6 / Ubuntu 22.04 + ffmpeg + Ceres 2.2.0 + COLMAP 3.11.1 (CUDA)
+#   CUDA 12.8 / Ubuntu 22.04 + ffmpeg + Ceres 2.2.0 + COLMAP 3.11.1 (CUDA)
 #   + OpenMVS 2.3.0 (CUDA) + Python 3 (PyYAML, numpy, PIL).
 #
 # Khipu NO usa este archivo: allí se construyen los .sif con Apptainer. Si se
@@ -10,17 +10,16 @@
 # Construir (una vez, ~1-2 h según CPU; necesita ~15 GB de disco libre):
 #   docker build -t photogrammetry:local -f containers/Dockerfile .
 #
-# CUDA_ARCHS: arquitecturas de GPU para las que se compila (por defecto cubre
-# GeForce GTX 10xx=61, GTX 16xx/RTX 20xx/T4=75, RTX 30xx/A6000=86, RTX 40xx=89,
-# A100=80). Para compilar más rápido, dejar solo la de tu GPU:
-#   docker build --build-arg CUDA_ARCHS="86" -t photogrammetry:local -f containers/Dockerfile .
+# CUDA_ARCHS: por defecto RTX 30xx/A6000=86, RTX 40xx=89 y Blackwell L507=120.
+# Para compilar más rápido en el laboratorio, dejar solo la de la GPU:
+#   docker build --build-arg CUDA_ARCHS="120" -t photogrammetry:local -f containers/Dockerfile .
 # (la de tu GPU: https://developer.nvidia.com/cuda-gpus, "Compute Capability" sin el punto)
 #
 # Ejecutar: ./containers/docker-run.sh ...   (ver docs/ejecutar-fuera-de-khipu.md)
 # =============================================================================
-FROM nvidia/cuda:12.6.3-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
-ARG CUDA_ARCHS="61;75;80;86;89"
+ARG CUDA_ARCHS="86;89;120"
 ARG J=8
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C
 
@@ -29,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git wget ca-certificates \
         build-essential cmake ninja-build pkg-config \
         ffmpeg \
-        python3 python3-yaml python3-numpy python3-pil \
+        python3 python3-pip python3-dev python3-yaml python3-numpy python3-pil \
         libboost-filesystem-dev libboost-graph-dev libboost-iostreams-dev \
         libboost-program-options-dev libboost-serialization-dev libboost-system-dev \
         libeigen3-dev libflann-dev libfreeimage-dev libmetis-dev \
@@ -61,6 +60,8 @@ RUN git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git /op
 # en runtime `docker run --gpus all` inyecta la libcuda.so.1 real.
 RUN git clone --depth 1 https://github.com/cdcseacave/VCG.git /opt/vcglib \
     && git clone --branch v2.3.0 --depth 1 --recursive https://github.com/cdcseacave/openMVS.git /opt/src/openMVS \
+    && sed -i "s/CUDA_ARCHITECTURES \"50;72;75\"/CUDA_ARCHITECTURES \"${CUDA_ARCHS}\"/g" /opt/src/openMVS/libs/MVS/CMakeLists.txt \
+    && ! grep -q '50;72;75' /opt/src/openMVS/libs/MVS/CMakeLists.txt \
     && cmake -S /opt/src/openMVS -B /opt/src/openMVS/build -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DOpenMVS_USE_CUDA=ON \
@@ -72,6 +73,19 @@ RUN git clone --depth 1 https://github.com/cdcseacave/VCG.git /opt/vcglib \
     && rm -rf /opt/src /opt/vcglib
 
 ENV PATH=/usr/local/bin/OpenMVS:$PATH
+
+# Keep Python bindings on exactly the COLMAP source revision used by the CLI.
+RUN python3 -m pip install --no-cache-dir pip==25.3 \
+    && python3 -m pip install --no-cache-dir scikit-build-core==0.11.6 pybind11==2.13.6 \
+        numpy==1.26.4 PyYAML==6.0.2 Pillow==10.4.0 \
+    && git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git /opt/pycolmap-src \
+    && test "$(git -C /opt/pycolmap-src rev-parse HEAD)" = "682ea9ac4020a143047758739259b3ff04dabe8d" \
+    && CMAKE_BUILD_PARALLEL_LEVEL=${J} python3 -m pip install --no-cache-dir --no-build-isolation --no-deps \
+       --config-settings=cmake.define.GENERATE_STUBS=OFF /opt/pycolmap-src/pycolmap \
+    && rm -rf /opt/pycolmap-src && ldconfig \
+    && python3 -c "import pycolmap; assert pycolmap.has_cuda; print(pycolmap.__version__)"
+
+LABEL photogrammetry.cuda_archs="${CUDA_ARCHS}"
 
 # Comprobación: falla el build si falta alguna pieza
 RUN command -v ffmpeg && command -v ffprobe && command -v colmap \

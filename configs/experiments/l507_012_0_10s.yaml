@@ -1,0 +1,51 @@
+# Pilot on the L507_012 data volume. No masks, mesh, refinement or texture.
+# ./containers/lab-run.sh run --config configs/experiments/l507_012_0_10s.yaml \
+#   --scene cuadra-025 --stages frames,telemetry,sfm,undistort,dense,metrics
+experiment:
+  name: l507_012_0_10s_v1
+  notes: "Cuadra 025, DJI video, interval [0,10) seconds; local Blackwell pilot."
+paths:
+  raw_root: /data/photogrammetry/datasets/raw
+  output_root: /data/photogrammetry/outputs
+frames:
+  start: "00:00:00"
+  end: "00:00:10"
+  fps: 2
+  resize: {long_edge: 1280}
+  format: jpg
+  jpg_quality: 2
+telemetry:
+  enabled: true
+masking:
+  enabled: false
+georef:
+  enabled: false
+colmap:
+  camera_model: SIMPLE_RADIAL
+  feature_extractor:
+    use_gpu: true
+    max_image_size: 1280
+    max_num_features: 8192
+    extra_args: {SiftExtraction.num_threads: 8}
+  matcher:
+    methods: [exhaustive]
+    use_gpu: true
+    extra_args: {SiftMatching.num_threads: 8}
+  mapper:
+    extra_args: {Mapper.num_threads: 8, Mapper.min_model_size: 3}
+  undistort:
+    max_image_size: 1280
+dense:
+  backend: openmvs
+openmvs:
+  densify:
+    resolution_level: 1
+    number_views: 4
+    extra_args: {max-threads: 8, max-resolution: 1280, min-resolution: 640}
+  mesh: {enabled: false}
+  refine: {enabled: false}
+  clean: {enabled: false}
+  texture: {enabled: false}
+runtime:
+  gpu: true
+  verify_cache: true

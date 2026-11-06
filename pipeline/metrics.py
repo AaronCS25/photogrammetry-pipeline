@@ -87,6 +87,8 @@ def _runtime_environment() -> dict:
     """Hardware y recursos del job actual (nodo, GPU, asignación SLURM)."""
     env = {
         "hostname": platform.node(),
+        "node_tag": os.environ.get("PG_NODE_TAG"),
+        "container_image_id": os.environ.get("PG_IMAGE_ID"),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         "slurm_gres": os.environ.get("SLURM_JOB_GRES"),
         "slurm_cpus_per_task": os.environ.get("SLURM_CPUS_PER_TASK"),
@@ -213,6 +215,7 @@ def run_metrics(ctx: Context, timings: dict[str, float],
     # Artefactos principales y sus tamaños
     artifacts = {}
     for label, path in {
+        "sparse_ply": ctx.colmap_dir / "sparse.ply",
         "dense_ply": openmvs_dense_ply,
         "colmap_fused_ply": fused,
         "mesh_ply": ctx.mvs_dir / "scene_mesh.ply",

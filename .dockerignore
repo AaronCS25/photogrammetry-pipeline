@@ -1,0 +1,11 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+datasets
+outputs
+resources
+**/node_modules
+web/data
+*.sif
+*.log

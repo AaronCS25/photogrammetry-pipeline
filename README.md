@@ -1,5 +1,9 @@
 # Photogrammetry Pipeline — Video → Nube de puntos densa → Malla
 
+**Piloto local L507 (Docker + Blackwell, sparse/densa, volumen bajo demanda):**
+[guía y comandos](docs/l507-pilot.md). Incluye diagnóstico `pipeline doctor`,
+PyCOLMAP CUDA y ensayo del video de la cuadra 025 en el intervalo 0–10 s.
+
 Pipeline reproducible de fotogrametría para el cluster **Khipu (UTEC)**:
 a partir de videos (dron y/o teléfono) genera frames con **FFmpeg**, reconstrucción
 sparse con **COLMAP**, y nube densa + malla + textura con **OpenMVS**, todo

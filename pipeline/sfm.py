@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import re
+import subprocess
 from pathlib import Path
 
 from .config import Context
@@ -37,7 +39,7 @@ def best_model_dir(ctx: Context) -> Path:
 
 def _select_best_model(ctx: Context) -> Path:
     """COLMAP puede producir varios modelos (sparse/0, sparse/1, ...);
-    se elige el de mayor images.bin como proxy de imágenes registradas."""
+    se elige por número real de imágenes registradas y puntos 3D."""
     models = [d for d in sorted(sparse_dir(ctx).iterdir()) if (d / "images.bin").is_file()]
     if not models:
         raise CommandError(
@@ -45,7 +47,19 @@ def _select_best_model(ctx: Context) -> Path:
             "Revisar logs/sfm.log (posibles causas: muy pocos matches, frames borrosos, "
             "overlap insuficiente entre frames)."
         )
-    best = max(models, key=lambda d: (d / "images.bin").stat().st_size)
+    def score(model):
+        result = subprocess.run(["colmap", "model_analyzer", "--path", str(model)],
+                                capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise CommandError(f"No se pudo analizar el modelo {model}: {result.stderr[-1000:]}")
+        text = result.stdout + result.stderr
+        images = re.search(r"Registered images:\s*(\d+)", text)
+        points = re.search(r"Points:\s*(\d+)", text)
+        return (int(images.group(1)) if images else 0, int(points.group(1)) if points else 0)
+    scores = {model: score(model) for model in models}
+    best = max(models, key=lambda model: scores[model])
+    if scores[best][0] < 2 or scores[best][1] == 0:
+        raise CommandError("El modelo sparse no tiene suficientes cámaras o puntos 3D válidos")
     if len(models) > 1:
         print(
             f"[sfm] ADVERTENCIA: el mapper produjo {len(models)} modelos desconectados; "
@@ -190,7 +204,9 @@ def run_sfm(ctx: Context) -> None:
     with open(ctx.metrics_dir / "sfm_timings.json", "w", encoding="utf-8") as fh:
         json.dump(breakdown, fh, indent=2)
 
-    _select_best_model(ctx)
+    best = _select_best_model(ctx)
+    run_cmd(["colmap", "model_converter", "--input_path", best,
+             "--output_path", ctx.colmap_dir / "sparse.ply", "--output_type", "PLY"], log)
 
 
 def _active_model(ctx: Context) -> Path:

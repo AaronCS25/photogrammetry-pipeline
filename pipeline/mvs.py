@@ -110,6 +110,10 @@ def run_densify(ctx: Context) -> None:
     cmd += extra_args_to_cli(dcfg.get("extra_args"))
     _run(ctx, cmd, "dense.log")
     _require(ctx, SCENE_DENSE, "dense")
+    from .metrics import parse_ply_counts
+    cloud = _require(ctx, "scene_dense.ply", "dense")
+    if not parse_ply_counts(cloud).get("vertex", 0):
+        raise CommandError("OpenMVS no produjo puntos en scene_dense.ply; revisar cámaras, overlap y resolución")
 
 
 def run_mesh(ctx: Context) -> None:

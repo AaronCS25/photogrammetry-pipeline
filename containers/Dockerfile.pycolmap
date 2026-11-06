@@ -1,0 +1,23 @@
+# Upgrade the already-validated lab image without rebuilding COLMAP/OpenMVS.
+# Full source recipe: containers/Dockerfile (also builds these bindings).
+ARG BASE_IMAGE=photogrammetry:local
+FROM ${BASE_IMAGE}
+ARG J=4
+ARG COLMAP_COMMIT=682ea9ac4020a143047758739259b3ff04dabe8d
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --no-cache-dir pip==25.3 \
+    && python3 -m pip install --no-cache-dir \
+        scikit-build-core==0.11.6 pybind11==2.13.6 \
+        numpy==1.26.4 PyYAML==6.0.2 Pillow==10.4.0
+RUN git clone --branch 3.11.1 --depth 1 https://github.com/colmap/colmap.git /opt/pycolmap-src \
+    && test "$(git -C /opt/pycolmap-src rev-parse HEAD)" = "${COLMAP_COMMIT}" \
+    && CMAKE_BUILD_PARALLEL_LEVEL=${J} python3 -m pip install --no-cache-dir --no-build-isolation --no-deps \
+       --config-settings=cmake.define.GENERATE_STUBS=OFF /opt/pycolmap-src/pycolmap \
+    && rm -rf /opt/pycolmap-src \
+    && ldconfig \
+    && python3 -c "import pycolmap; assert pycolmap.__version__ == '3.11.1'; assert pycolmap.has_cuda; print('PyCOLMAP CUDA OK')"
+LABEL photogrammetry.colmap.commit="682ea9ac4020a143047758739259b3ff04dabe8d" \
+      photogrammetry.pycolmap.version="3.11.1" \
+      photogrammetry.profile="l507-pilot-v1"
